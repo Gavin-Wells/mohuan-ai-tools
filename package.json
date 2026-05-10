@@ -1,7 +1,7 @@
 {
-  "name": "cc-switch",
-  "version": "3.14.1",
-  "description": "All-in-One Assistant for Claude Code, Codex & Gemini CLI",
+  "name": "mohuan-ai-tools",
+  "version": "1.0.0",
+  "description": "模幻AI工具 — 硅基链路（modelswitch.org）一键配置",
   "type": "module",
   "scripts": {
     "dev": "pnpm tauri dev",

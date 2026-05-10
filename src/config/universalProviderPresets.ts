@@ -1,8 +1,5 @@
 /**
- * 统一供应商（Universal Provider）预设配置
- *
- * 统一供应商是跨应用共享的配置，修改后会自动同步到 Claude、Codex、Gemini 三个应用。
- * 适用于 NewAPI 等支持多种协议的 API 网关。
+ * 统一供应商预设（模幻AI工具 — 仅硅基链路网关）
  */
 
 import type {
@@ -10,88 +7,59 @@ import type {
   UniversalProviderApps,
   UniversalProviderModels,
 } from "@/types";
+import {
+  MOHUAN_DEFAULT_CHAT_MODEL,
+  MOHUAN_DEFAULT_FLASH_MODEL,
+  MOHUAN_GATEWAY_V1,
+  MOHUAN_WEB_URL,
+} from "./mohuanGateway";
 
-/**
- * 统一供应商预设接口
- */
 export interface UniversalProviderPreset {
-  /** 预设名称 */
   name: string;
-  /** 供应商类型标识 */
   providerType: string;
-  /** 默认启用的应用 */
   defaultApps: UniversalProviderApps;
-  /** 默认模型配置 */
   defaultModels: UniversalProviderModels;
-  /** 网站链接 */
   websiteUrl?: string;
-  /** 图标名称 */
   icon?: string;
-  /** 图标颜色 */
   iconColor?: string;
-  /** 描述 */
   description?: string;
-  /** 是否为自定义模板（允许用户完全自定义） */
   isCustomTemplate?: boolean;
 }
 
-/**
- * NewAPI 默认模型配置
- */
-const NEWAPI_DEFAULT_MODELS: UniversalProviderModels = {
+const MOHUAN_DEFAULT_MODELS: UniversalProviderModels = {
   claude: {
-    model: "claude-sonnet-4-6",
-    haikuModel: "claude-haiku-4-5-20251001",
-    sonnetModel: "claude-sonnet-4-6",
-    opusModel: "claude-opus-4-7",
+    model: MOHUAN_DEFAULT_CHAT_MODEL,
+    haikuModel: MOHUAN_DEFAULT_FLASH_MODEL,
+    sonnetModel: MOHUAN_DEFAULT_CHAT_MODEL,
+    opusModel: MOHUAN_DEFAULT_CHAT_MODEL,
   },
   codex: {
-    model: "gpt-5.4",
+    model: MOHUAN_DEFAULT_CHAT_MODEL,
     reasoningEffort: "high",
   },
   gemini: {
-    model: "gemini-3.1-pro",
+    model: MOHUAN_DEFAULT_CHAT_MODEL,
   },
 };
 
-/**
- * 统一供应商预设列表
- */
 export const universalProviderPresets: UniversalProviderPreset[] = [
   {
-    name: "NewAPI",
-    providerType: "newapi",
+    name: "硅基链路（模幻网关）",
+    providerType: "modelswitch",
     defaultApps: {
       claude: true,
       codex: true,
       gemini: true,
     },
-    defaultModels: NEWAPI_DEFAULT_MODELS,
-    websiteUrl: "https://www.newapi.pro",
-    icon: "newapi",
-    iconColor: "#00A67E",
+    defaultModels: MOHUAN_DEFAULT_MODELS,
+    websiteUrl: MOHUAN_WEB_URL,
+    icon: "generic",
+    iconColor: "#0D9488",
     description:
-      "NewAPI 是一个可自部署的 API 网关，支持 Anthropic、OpenAI、Gemini 等多种协议",
-  },
-  {
-    name: "自定义网关",
-    providerType: "custom_gateway",
-    defaultApps: {
-      claude: true,
-      codex: true,
-      gemini: true,
-    },
-    defaultModels: NEWAPI_DEFAULT_MODELS,
-    icon: "openai",
-    iconColor: "#6366F1",
-    description: "自定义配置的 API 网关",
-    isCustomTemplate: true,
+      "硅基链路 API 网关（ploy-api），统一地址 " + MOHUAN_GATEWAY_V1,
   },
 ];
 
-/**
- * 根据预设创建统一供应商
- */
 export function createUniversalProviderFromPreset(
   preset: UniversalProviderPreset,
   id: string,
@@ -106,7 +74,7 @@ export function createUniversalProviderFromPreset(
     apps: { ...preset.defaultApps },
     baseUrl,
     apiKey,
-    models: JSON.parse(JSON.stringify(preset.defaultModels)), // Deep copy
+    models: JSON.parse(JSON.stringify(preset.defaultModels)),
     websiteUrl: preset.websiteUrl,
     icon: preset.icon,
     iconColor: preset.iconColor,
@@ -114,16 +82,10 @@ export function createUniversalProviderFromPreset(
   };
 }
 
-/**
- * 获取预设的显示名称（用于 UI）
- */
 export function getPresetDisplayName(preset: UniversalProviderPreset): string {
   return preset.name;
 }
 
-/**
- * 根据类型查找预设
- */
 export function findPresetByType(
   providerType: string,
 ): UniversalProviderPreset | undefined {

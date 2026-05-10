@@ -95,7 +95,7 @@ pub struct WebDavSyncStatus {
 }
 
 fn default_remote_root() -> String {
-    "cc-switch-sync".to_string()
+    "mohuan-ai-sync".to_string()
 }
 fn default_profile() -> String {
     "default".to_string()
@@ -360,7 +360,7 @@ impl AppSettings {
         // settings.json 保留用于旧版本迁移和无数据库场景
         Some(
             crate::config::get_home_dir()
-                .join(".cc-switch")
+                .join(".mohuan-ai")
                 .join("settings.json"),
         )
     }

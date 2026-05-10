@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "CC Switch",
-    "description": "Claude Code / Codex / Gemini CLI 全方位辅助工具"
+    "title": "模幻AI工具",
+    "description": "硅基链路（modelswitch.org）网关 — Claude / Codex / Gemini 等一键配置"
   },
   "common": {
     "add": "添加",
@@ -43,15 +43,16 @@
     "notSet": "未设置"
   },
   "firstRunNotice": {
-    "title": "欢迎使用 CC Switch",
-    "bodyDefault": "CC Switch 可以帮你在 Claude Code / Codex / Gemini CLI 的多个供应商之间一键切换。如果你之前已经配置过这些工具，CC Switch 会自动把现有设置保存为名为 “default” 的供应商，保证你的配置不会丢失。",
-    "bodyOfficial": "列表里还预置了 “官方（Official）” 供应商，随时点一下即可切回官方默认配置。切换前 CC Switch 会自动把当前配置备份回 default，可以放心来回切。CC Switch 就是这样工作的 😊",
+    "title": "欢迎使用模幻AI工具",
+    "bodyDefault": "本工具仅对接硅基链路网关（https://modelswitch.org/）。添加供应商时已预填网关地址，你只需粘贴在控制台创建的 API Key 即可一键写入各 CLI 配置。",
+    "bodyOfficial": "若你已在各工具里配置过密钥，首次同步时我们会尽量保留你的本地设置；之后切换仍建议在本工具内完成，以免路径不一致。",
     "confirm": "我知道了"
   },
   "apiKeyInput": {
     "placeholder": "请输入API Key",
     "show": "显示API Key",
-    "hide": "隐藏API Key"
+    "hide": "隐藏API Key",
+    "pasteFromClipboard": "一键从剪贴板填入"
   },
   "jsonEditor": {
     "mustBeObject": "配置必须是JSON对象，不能是数组或其他类型",
@@ -488,7 +489,7 @@
         "synologyHint": "请先在群晖「套件中心」安装并启用 WebDAV Server 套件。",
         "custom": "自定义"
       },
-      "remoteRootDefault": "默认: cc-switch-sync",
+      "remoteRootDefault": "默认: mohuan-ai-sync",
       "profileDefault": "默认: default",
       "saveAndTestSuccess": "配置已保存，连接正常",
       "saveAndTestFailed": "配置已保存，但连接测试失败：{{error}}",
@@ -559,7 +560,7 @@
       "description": "选择 CC Switch 存放 Skills 主副本的目录",
       "ccSwitch": "CC Switch",
       "unified": "~/.agents/skills",
-      "ccSwitchHint": "技能存储在 ~/.cc-switch/skills/，由 CC Switch 统一管理并同步到各应用。",
+      "ccSwitchHint": "技能存储在 ~/.mohuan-ai/skills/，由模幻AI工具统一管理并同步到各应用。",
       "unifiedHint": "技能存储在 ~/.agents/skills/，遵循 Agent Skills 开放标准。兼容的工具（Claude Code、Codex、Gemini CLI 等）可直接发现此目录中的技能。",
       "confirmTitle": "迁移技能存储",
       "confirmMessage": "将移动 {{count}} 个技能到新位置，是否继续？",
@@ -607,7 +608,7 @@
     "configDirectoryDescription": "在 WSL 等环境使用 Claude Code 或 Codex 的时候，可手动指定为 WSL 里的配置目录，供应商数据与主环境保持一致。",
     "appConfigDir": "CC Switch 配置目录",
     "appConfigDirDescription": "自定义 CC Switch 的配置存储位置（指定到云同步文件夹即可云同步配置）",
-    "browsePlaceholderApp": "例如：C:\\Users\\Administrator\\.cc-switch",
+    "browsePlaceholderApp": "例如：C:\\Users\\Administrator\\.mohuan-ai",
     "claudeConfigDir": "Claude Code 配置目录",
     "claudeConfigDirDescription": "覆盖 Claude 配置目录 (settings.json)，同时会在同级存放 Claude MCP 的 claude.json。",
     "codexConfigDir": "Codex 配置目录",
@@ -819,7 +820,7 @@
     "officialHint": "💡 官方供应商使用浏览器登录，无需配置 API Key",
     "getApiKey": "获取 API Key",
     "partnerPromotion": {
-      "packycode": "PackyCode 是 CC Switch 的官方合作伙伴，使用此链接注册并在充值时填写 \"cc-switch\" 优惠码，可以享受9折优惠",
+      "packycode": "",
       "minimax_cn": "MiniMax Coding Plan 特惠，Starter 套餐 9.9 元起",
       "minimax_en": "MiniMax Coding Plan 黑五特惠，Starter 套餐现仅 $2/月（2折优惠！）",
       "dmxapi": "Claude Code 专属模型 3.4 折优惠进行中！",
@@ -835,7 +836,7 @@
       "micu": "Micu 是 CC Switch 的官方合作伙伴",
       "ctok": "官网加入CTok社群，订阅套餐。",
       "ddshub": "呆呆兽为CC Switch 的用户提供了特别福利，通过此链接注册后，首单充值可额外赠送 10% 额度（联系群主领取）！",
-      "lionccapi": "LionCCAPI 为 CC Switch 的用户提供了特别福利，注册后添加客服微信HSQBJ088888888，发暗号cc-switch备注即可送10美金额度！",
+      "lionccapi": "",
       "shengsuanyun": "胜算云为 CC Switch 的用户提供了特别福利，使用此链接注册的新用户可获 10 元模力及首充 10% 赠送！",
       "lemondata": "Lemon Code 为 CC Switch 的用户提供了特别优惠。使用此链接注册可以获得1美元免费额度。"
     },
@@ -855,7 +856,7 @@
     "modelHint": "💡 留空将使用供应商的默认模型",
     "apiHint": "💡 填写兼容 Claude API 的服务端点地址，不要以斜杠结尾",
     "apiHintOAI": "💡 填写兼容 OpenAI Chat Completions 的服务端点地址，不要以斜杠结尾",
-    "apiHintGeminiNative": "💡 建议填写 Gemini Native 的 base URL，例如 https://generativelanguage.googleapis.com 或 https://generativelanguage.googleapis.com/v1beta；代理会自动补全 models/*:generateContent",
+    "apiHintGeminiNative": "💡 Gemini 已预设为模幻网关（modelswitch.org/v1），无需手动修改",
     "codexApiHint": "💡 填写兼容 OpenAI Response 格式的服务端点地址",
     "fillSupplierName": "请填写供应商名称",
     "fillConfigContent": "请填写配置内容",

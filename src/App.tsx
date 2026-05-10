@@ -89,6 +89,7 @@ import ToolsPanel from "@/components/openclaw/ToolsPanel";
 import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
+import { MohuanDashboard } from "@/components/mohuan/MohuanDashboard";
 
 type View =
   | "providers"
@@ -104,7 +105,8 @@ type View =
   | "openclawEnv"
   | "openclawTools"
   | "openclawAgents"
-  | "hermesMemory";
+  | "hermesMemory"
+  | "dashboard";
 
 interface WebDavSyncStatusUpdatedPayload {
   source?: string;
@@ -115,7 +117,7 @@ interface WebDavSyncStatusUpdatedPayload {
 const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
 const HEADER_HEIGHT = 64; // px
 
-const STORAGE_KEY = "cc-switch-last-app";
+const STORAGE_KEY = "mohuan-ai-last-app";
 const VALID_APPS: AppId[] = [
   "claude",
   "claude-desktop",
@@ -134,7 +136,7 @@ const getInitialApp = (): AppId => {
   return "claude";
 };
 
-const VIEW_STORAGE_KEY = "cc-switch-last-view";
+const VIEW_STORAGE_KEY = "mohuan-ai-last-view";
 const VALID_VIEWS: View[] = [
   "providers",
   "settings",
@@ -959,6 +961,8 @@ function App() {
           return <ToolsPanel />;
         case "openclawAgents":
           return <AgentsDefaultsPanel />;
+        case "dashboard":
+          return <MohuanDashboard />;
         default:
           return (
             <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -1179,13 +1183,14 @@ function App() {
                   {currentView === "openclawAgents" &&
                     t("openclaw.agents.title")}
                   {currentView === "hermesMemory" && t("hermes.memory.title")}
+                  {currentView === "dashboard" && "控制台"}
                 </h1>
               </div>
             ) : (
               <div className="flex items-center gap-2">
                 <div className="relative inline-flex items-center">
                   <a
-                    href="https://github.com/farion1231/cc-switch"
+                    href="https://modelswitch.org/"
                     target="_blank"
                     rel="noreferrer"
                     className={cn(
@@ -1195,9 +1200,21 @@ function App() {
                         : "text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300",
                     )}
                   >
-                    CC Switch
+                    模幻AI工具
                   </a>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setCurrentView("dashboard")}
+                  title="控制台"
+                  className={cn(
+                    "hover:bg-black/5 dark:hover:bg-white/5",
+                    currentView === "dashboard" && "text-primary",
+                  )}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"

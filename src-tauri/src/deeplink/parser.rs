@@ -1,6 +1,6 @@
 //! Deep link URL parser
 //!
-//! Parses ccswitch:// URLs into DeepLinkImportRequest structures.
+//! Parses mohuan:// URLs into DeepLinkImportRequest structures.
 
 use super::utils::validate_url;
 use super::DeepLinkImportRequest;
@@ -8,10 +8,10 @@ use crate::error::AppError;
 use std::collections::HashMap;
 use url::Url;
 
-/// Parse a ccswitch:// URL into a DeepLinkImportRequest
+/// Parse a mohuan:// URL into a DeepLinkImportRequest
 ///
 /// Expected format:
-/// ccswitch://v1/import?resource={type}&...
+/// mohuan://v1/import?resource={type}&...
 pub fn parse_deeplink_url(url_str: &str) -> Result<DeepLinkImportRequest, AppError> {
     // Parse URL
     let url = Url::parse(url_str)

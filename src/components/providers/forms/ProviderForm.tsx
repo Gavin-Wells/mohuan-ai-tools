@@ -1250,8 +1250,7 @@ function ProviderFormFull({
     );
   }, [groupedPresets]);
 
-  const shouldShowSpeedTest =
-    category !== "official" && category !== "cloud_provider";
+  const shouldShowSpeedTest = false;
 
   const {
     shouldShowApiKeyLink: shouldShowClaudeApiKeyLink,
