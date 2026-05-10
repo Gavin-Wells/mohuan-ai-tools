@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "模幻AI工具 — 硅基链路网关一键配置"
 authors = []
 license = "MIT"
-repository = ""
+repository = "https://github.com/Gavin-Wells/mohuan-ai-tools"
 edition = "2021"
 rust-version = "1.85.0"
 
