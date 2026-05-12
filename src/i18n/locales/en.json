@@ -856,7 +856,7 @@
     "modelHint": "💡 Leave blank to use provider's default model",
     "apiHint": "💡 Fill in Claude API compatible service endpoint, avoid trailing slash",
     "apiHintOAI": "💡 Fill in OpenAI Chat Completions compatible service endpoint, avoid trailing slash",
-    "apiHintGeminiNative": "💡 Gemini is pre-configured to use the Mohuan gateway (modelswitch.org/v1), no manual changes needed",
+    "apiHintGeminiNative": "💡 Gemini is pre-configured to use the Mohuan gateway (api.modelswitch.org/v1), no manual changes needed",
     "codexApiHint": "💡 Fill in service endpoint compatible with OpenAI Response format",
     "fillSupplierName": "Please fill in provider name",
     "fillConfigContent": "Please fill in configuration content",

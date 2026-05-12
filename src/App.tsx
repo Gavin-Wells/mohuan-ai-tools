@@ -133,7 +133,7 @@ const getInitialApp = (): AppId => {
   if (saved && VALID_APPS.includes(saved)) {
     return saved;
   }
-  return "claude";
+  return "codex";
 };
 
 const VIEW_STORAGE_KEY = "mohuan-ai-last-view";

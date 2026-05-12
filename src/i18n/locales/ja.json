@@ -856,7 +856,7 @@
     "modelHint": "💡 空欄ならプロバイダーのデフォルトモデルを使用します",
     "apiHint": "💡 Claude API 互換サービスのエンドポイントを入力してください。末尾にスラッシュを付けないでください",
     "apiHintOAI": "💡 OpenAI Chat Completions 互換サービスのエンドポイントを入力してください。末尾にスラッシュを付けないでください",
-    "apiHintGeminiNative": "💡 Gemini は模幻ゲートウェイ（modelswitch.org/v1）に事前設定されています。手動変更は不要です",
+    "apiHintGeminiNative": "💡 Gemini は模幻ゲートウェイ（api.modelswitch.org/v1）に事前設定されています。手動変更は不要です",
     "codexApiHint": "💡 OpenAI Response 互換のサービスエンドポイントを入力してください",
     "fillSupplierName": "プロバイダー名を入力してください",
     "fillConfigContent": "設定内容を入力してください",
