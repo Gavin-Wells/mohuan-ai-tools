@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useTranslation } from "react-i18next";
+import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import {
@@ -8,13 +7,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { providersApi } from "@/lib/api";
-import type { Provider } from "@/types";
-import {
-  generateThirdPartyAuth,
-  generateThirdPartyConfig,
-} from "@/config/codexProviderPresets";
-import { MOHUAN_GATEWAY_V1, MOHUAN_DEFAULT_CHAT_MODEL } from "@/config/mohuanGateway";
+import { generateThirdPartyConfig } from "@/config/codexProviderPresets";
+import { MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
+
+const CODEX_DEFAULT_MODEL = "gpt-5.5";
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
 
@@ -26,43 +22,26 @@ interface Billing {
 }
 
 interface CodexSetupPageProps {
-  providers: Record<string, Provider>;
+  providers: Record<string, import("@/types").Provider>;
   onProvidersChanged: () => void;
 }
 
 const fmt = (n: number, c: string) => `${c === "CNY" ? "¥" : "$"}${n.toFixed(2)}`;
 const fmtTk = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
 
-async function launchCodex() {
+function readSavedKey(): string {
   try {
-    await invoke("open_terminal_with_command", { command: "open -a Codex" });
-  } catch {
-    try {
-      await invoke("run_shell_command", { command: "open -a Codex" });
-    } catch {
-      window.open("codex://", "_blank");
-    }
-  }
+    const raw = localStorage.getItem("codex_api_key");
+    return raw ?? "";
+  } catch { return ""; }
 }
 
-export function CodexSetupPage({ providers, onProvidersChanged }: CodexSetupPageProps) {
-  const { t } = useTranslation();
-  const [apiKey, setApiKey] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [statusMsg, setStatusMsg] = useState("");
+export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onProvidersChanged }: CodexSetupPageProps) {
+  const [apiKey, setApiKey] = useState(readSavedKey);
+  const [status, setStatus] = useState<Status>(() => readSavedKey() ? "done" : "idle");
+  const [statusMsg, setStatusMsg] = useState(() => readSavedKey() ? "Codex 已配置，可直接使用" : "");
   const [showKey, setShowKey] = useState(false);
   const [billing, setBilling] = useState<Billing | null>(null);
-
-  const providerList = useMemo(() => Object.values(providers), [providers]);
-  const existing = providerList[0];
-
-  const extractKey = useCallback((p: Provider | undefined) => {
-    if (!p) return "";
-    try {
-      const sc = typeof p.settingsConfig === "string" ? JSON.parse(p.settingsConfig) : p.settingsConfig ?? {};
-      return sc?.auth?.OPENAI_API_KEY || "";
-    } catch { return ""; }
-  }, []);
 
   const fetchBilling = useCallback(async (key: string) => {
     if (!key.trim()) return;
@@ -73,14 +52,9 @@ export function CodexSetupPage({ providers, onProvidersChanged }: CodexSetupPage
   }, []);
 
   useEffect(() => {
-    const key = extractKey(existing);
-    if (key) {
-      setApiKey(key);
-      setStatus("done");
-      setStatusMsg(t("codexSetup.alreadyConfigured", { defaultValue: "Codex 已配置，可直接使用" }));
-      fetchBilling(key);
-    }
-  }, [existing, extractKey, fetchBilling, t]);
+    const k = readSavedKey();
+    if (k) fetchBilling(k);
+  }, [fetchBilling]);
 
   const handleVerify = useCallback(async () => {
     const k = apiKey.trim();
@@ -107,40 +81,33 @@ export function CodexSetupPage({ providers, onProvidersChanged }: CodexSetupPage
     if (!k) { toast.error("请先输入 API Key"); return; }
     setStatus("writing"); setStatusMsg("正在配置并启动 Codex...");
     try {
-      const auth = generateThirdPartyAuth(k);
-      const config = generateThirdPartyConfig("openai_custom", MOHUAN_GATEWAY_V1, MOHUAN_DEFAULT_CHAT_MODEL);
-      if (existing) {
-        await providersApi.update({ ...existing, settingsConfig: { auth, config } as Record<string, any> }, "codex", existing.id);
-        await providersApi.switch(existing.id, "codex");
-      } else {
-        const np: Provider = { id: crypto.randomUUID(), name: "Codex", category: "third_party", settingsConfig: { auth, config } as Record<string, any>, notes: "", websiteUrl: "", sortIndex: 0 };
-        await providersApi.add(np, "codex");
-        await providersApi.switch(np.id, "codex");
-      }
-      onProvidersChanged();
+      const configToml = generateThirdPartyConfig("openai_custom", MOHUAN_GATEWAY_V1, CODEX_DEFAULT_MODEL);
+      const msg: string = await invoke("setup_and_launch_codex", { apiKey: k, configToml });
+      localStorage.setItem("codex_api_key", k);
       fetchBilling(k);
-      await launchCodex();
-      setStatus("done"); setStatusMsg("配置完成，Codex 已启动");
+      setStatus("done"); setStatusMsg(msg);
       toast.success("Codex 已启动");
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
       setStatus("invalid");
-      setStatusMsg(`配置失败: ${err instanceof Error ? err.message : String(err)}`);
-      toast.error("配置写入失败");
+      setStatusMsg(`启动失败: ${errMsg}`);
+      toast.error(errMsg);
     }
-  }, [apiKey, existing, fetchBilling, onProvidersChanged]);
+  }, [apiKey, fetchBilling]);
 
   const handleRestore = useCallback(async () => {
     setStatus("writing"); setStatusMsg("正在还原...");
     try {
-      for (const p of providerList) await providersApi.delete(p.id, "codex");
-      onProvidersChanged(); setApiKey(""); setBilling(null);
+      await invoke("restore_codex_defaults");
+      localStorage.removeItem("codex_api_key");
+      setApiKey(""); setBilling(null);
       setStatus("idle"); setStatusMsg("已还原为官方默认设置");
       toast.success("Codex 设置已还原");
     } catch (err) {
       setStatus("invalid");
       setStatusMsg(`还原失败: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, [providerList, onProvidersChanged]);
+  }, []);
 
   const isLoading = status === "checking" || status === "writing";
 
@@ -188,7 +155,7 @@ export function CodexSetupPage({ providers, onProvidersChanged }: CodexSetupPage
             {status === "writing" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Rocket className="mr-1.5 h-3.5 w-3.5" />}
             一键启动
           </Button>
-          <Button variant="outline" onClick={handleRestore} disabled={isLoading || providerList.length === 0} className="h-10 text-xs font-medium text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-950">
+          <Button variant="outline" onClick={handleRestore} disabled={isLoading} className="h-10 text-xs font-medium text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800 hover:bg-orange-50 dark:hover:bg-orange-950">
             <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
             还原设置
           </Button>

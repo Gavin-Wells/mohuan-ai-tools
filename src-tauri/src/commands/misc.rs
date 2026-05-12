@@ -18,6 +18,95 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+/// 一键配置并启动 Codex CLI
+/// 直接写 ~/.codex/auth.json 和 config.toml，然后在系统终端中打开 codex
+#[tauri::command]
+pub async fn setup_and_launch_codex(
+    #[allow(non_snake_case)] apiKey: String,
+    #[allow(non_snake_case)] configToml: String,
+) -> Result<String, String> {
+    use std::process::Command;
+
+    let api_key = apiKey.trim().to_string();
+    if api_key.is_empty() {
+        return Err("API Key 不能为空".to_string());
+    }
+
+    // 1) Write ~/.codex/auth.json
+    let auth_value = serde_json::json!({ "OPENAI_API_KEY": api_key });
+    crate::codex_config::write_codex_live_atomic(&auth_value, Some(&configToml))
+        .map_err(|e| format!("写入 Codex 配置失败: {e}"))?;
+
+    // 2) Launch terminal with codex
+    #[cfg(target_os = "macos")]
+    {
+        let output = Command::new("osascript")
+            .args([
+                "-e",
+                r#"tell application "Terminal"
+    activate
+    do script "eval \"$(fnm env 2>/dev/null)\" 2>/dev/null; eval \"$(nvm.sh 2>/dev/null)\" 2>/dev/null; codex"
+end tell"#,
+            ])
+            .output()
+            .map_err(|e| format!("启动终端失败: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("osascript 失败: {stderr}"));
+        }
+        return Ok("Codex 已在 Terminal 中启动".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("cmd")
+            .args(["/C", "start", "cmd", "/K", "codex"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn()
+            .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+        return Ok("Codex 已在终端中启动".to_string());
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        let shell_cmd = r#"eval "$(fnm env 2>/dev/null)" 2>/dev/null; codex"#;
+        for term in &["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
+            if Command::new("which").arg(term).output().map(|o| o.status.success()).unwrap_or(false) {
+                let args: Vec<&str> = if *term == "gnome-terminal" {
+                    vec!["--", "bash", "-c", shell_cmd]
+                } else {
+                    vec!["-e", "bash", "-c", shell_cmd]
+                };
+                Command::new(term)
+                    .args(&args)
+                    .spawn()
+                    .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+                return Ok("Codex 已在终端中启动".to_string());
+            }
+        }
+        return Err("未找到终端模拟器，请手动打开终端运行 codex".to_string());
+    }
+
+    #[allow(unreachable_code)]
+    Err("不支持的操作系统".to_string())
+}
+
+/// 还原 Codex 为官方默认配置（删除 ~/.codex/auth.json 和 config.toml）
+#[tauri::command]
+pub async fn restore_codex_defaults() -> Result<bool, String> {
+    let auth_path = crate::codex_config::get_codex_auth_path();
+    let config_path = crate::codex_config::get_codex_config_path();
+    if auth_path.exists() {
+        std::fs::remove_file(&auth_path)
+            .map_err(|e| format!("删除 auth.json 失败: {e}"))?;
+    }
+    if config_path.exists() {
+        std::fs::remove_file(&config_path)
+            .map_err(|e| format!("删除 config.toml 失败: {e}"))?;
+    }
+    Ok(true)
+}
+
 /// 打开外部链接
 #[tauri::command]
 pub async fn open_external(app: AppHandle, url: String) -> Result<bool, String> {
