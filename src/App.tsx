@@ -90,6 +90,7 @@ import AgentsDefaultsPanel from "@/components/openclaw/AgentsDefaultsPanel";
 import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 import { MohuanDashboard } from "@/components/mohuan/MohuanDashboard";
+import { CodexSetupPage } from "@/components/codex/CodexSetupPage";
 
 type View =
   | "providers"
@@ -964,6 +965,14 @@ function App() {
         case "dashboard":
           return <MohuanDashboard />;
         default:
+          if (activeApp === "codex") {
+            return (
+              <CodexSetupPage
+                providers={providers}
+                onProvidersChanged={handleImportSuccess}
+              />
+            );
+          }
           return (
             <div className="px-6 flex flex-col flex-1 min-h-0 overflow-hidden">
               <div className="flex-1 overflow-y-auto overflow-x-hidden pb-12 px-1">
@@ -1257,7 +1266,8 @@ function App() {
             {currentView === "providers" &&
               activeApp !== "opencode" &&
               activeApp !== "openclaw" &&
-              activeApp !== "hermes" && (
+              activeApp !== "hermes" &&
+              activeApp !== "codex" && (
                 <div
                   className="flex shrink-0 items-center gap-1.5"
                   style={{ WebkitAppRegion: "no-drag" } as any}
@@ -1393,6 +1403,7 @@ function App() {
                       compact={isToolbarCompact}
                     />
 
+                    {activeApp !== "codex" && (<>
                     <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
                       <AnimatePresence mode="wait">
                         <motion.div
@@ -1563,6 +1574,7 @@ function App() {
                     >
                       <Plus className="w-5 h-5" />
                     </Button>
+                    </>)}
                   </>
                 )}
               </div>
