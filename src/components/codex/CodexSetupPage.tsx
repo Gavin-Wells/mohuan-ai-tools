@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   Rocket, KeyRound, RotateCcw, CheckCircle2, XCircle,
   Loader2, Eye, EyeOff, Wallet, Activity, TrendingUp,
+  Download, AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +14,7 @@ import { MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
 const CODEX_DEFAULT_MODEL = "gpt-5.5";
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
+type InstallStatus = "checking" | "installed" | "not_installed" | "installing" | "install_failed";
 
 interface Billing {
   balance: number;
@@ -30,10 +32,7 @@ const fmt = (n: number, c: string) => `${c === "CNY" ? "¥" : "$"}${n.toFixed(2)
 const fmtTk = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : String(n);
 
 function readSavedKey(): string {
-  try {
-    const raw = localStorage.getItem("codex_api_key");
-    return raw ?? "";
-  } catch { return ""; }
+  try { return localStorage.getItem("codex_api_key") ?? ""; } catch { return ""; }
 }
 
 export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onProvidersChanged }: CodexSetupPageProps) {
@@ -42,6 +41,27 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
   const [statusMsg, setStatusMsg] = useState(() => readSavedKey() ? "Codex 已配置，可直接使用" : "");
   const [showKey, setShowKey] = useState(false);
   const [billing, setBilling] = useState<Billing | null>(null);
+
+  const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
+  const [codexPath, setCodexPath] = useState<string | null>(null);
+  const [installMsg, setInstallMsg] = useState("");
+
+  // Check if codex CLI is installed on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
+        if (result.installed) {
+          setInstallStatus("installed");
+          setCodexPath(result.path);
+        } else {
+          setInstallStatus("not_installed");
+        }
+      } catch {
+        setInstallStatus("not_installed");
+      }
+    })();
+  }, []);
 
   const fetchBilling = useCallback(async (key: string) => {
     if (!key.trim()) return;
@@ -55,6 +75,31 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     const k = readSavedKey();
     if (k) fetchBilling(k);
   }, [fetchBilling]);
+
+  const handleInstall = useCallback(async () => {
+    setInstallStatus("installing");
+    setInstallMsg("正在安装 Codex CLI，请稍候...");
+    try {
+      await invoke("install_codex_cli");
+      setInstallMsg("");
+      // Re-check after install
+      const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
+      if (result.installed) {
+        setInstallStatus("installed");
+        setCodexPath(result.path);
+        toast.success("Codex CLI 安装成功");
+      } else {
+        setInstallStatus("install_failed");
+        setInstallMsg("安装命令已执行，但未找到 codex。请在终端手动运行: npm install -g @openai/codex");
+        toast.error("安装后仍未检测到 codex");
+      }
+    } catch (err) {
+      setInstallStatus("install_failed");
+      const errMsg = err instanceof Error ? err.message : String(err);
+      setInstallMsg(`安装失败: ${errMsg}`);
+      toast.error("安装失败");
+    }
+  }, []);
 
   const handleVerify = useCallback(async () => {
     const k = apiKey.trim();
@@ -82,7 +127,11 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     setStatus("writing"); setStatusMsg("正在配置并启动 Codex...");
     try {
       const configToml = generateThirdPartyConfig("openai_custom", MOHUAN_GATEWAY_V1, CODEX_DEFAULT_MODEL);
-      const msg: string = await invoke("setup_and_launch_codex", { apiKey: k, configToml });
+      const msg: string = await invoke("setup_and_launch_codex", {
+        apiKey: k,
+        configToml,
+        model: CODEX_DEFAULT_MODEL,
+      });
       localStorage.setItem("codex_api_key", k);
       fetchBilling(k);
       setStatus("done"); setStatusMsg(msg);
@@ -110,15 +159,63 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
   }, []);
 
   const isLoading = status === "checking" || status === "writing";
+  const codexReady = installStatus === "installed";
 
   return (
     <div className="px-6 flex flex-col flex-1 min-h-0">
-      <div className="max-w-md mx-auto w-full flex flex-col justify-center flex-1 gap-5 py-4">
-        {/* Header — compact */}
+      <div className="max-w-md mx-auto w-full flex flex-col justify-center flex-1 gap-4 py-4">
+        {/* Header */}
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold text-foreground">Codex 快速配置</h1>
-          <p className="text-xs text-muted-foreground">输入 API Key，一键配置并启动 Codex</p>
+          <p className="text-xs text-muted-foreground">
+            输入 API Key，一键启动 <code className="px-1 py-0.5 rounded bg-muted text-[11px]">codex -m {CODEX_DEFAULT_MODEL}</code>
+          </p>
         </div>
+
+        {/* Codex CLI status banner */}
+        {installStatus === "checking" && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            正在检测 Codex CLI...
+          </div>
+        )}
+        {installStatus === "installed" && codexPath && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 text-xs text-green-700 dark:text-green-400">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+            <span>Codex CLI 已安装: <code className="text-[10px] opacity-75">{codexPath}</code></span>
+          </div>
+        )}
+        {(installStatus === "not_installed" || installStatus === "install_failed") && (
+          <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 space-y-2">
+            <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              <span>未检测到 Codex CLI，需要先安装才能使用</span>
+            </div>
+            {installMsg && (
+              <p className="text-[11px] text-amber-600 dark:text-amber-500 pl-5">{installMsg}</p>
+            )}
+            <Button
+              size="sm"
+              onClick={handleInstall}
+              className="w-full h-8 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {installStatus === "install_failed" ? (
+                <><RotateCcw className="mr-1.5 h-3 w-3" />重试安装</>
+              ) : (
+                <><Download className="mr-1.5 h-3 w-3" />一键安装 Codex CLI</>
+              )}
+            </Button>
+            <p className="text-[10px] text-muted-foreground pl-5">
+              等同于运行: <code className="px-1 py-0.5 rounded bg-muted">npm install -g @openai/codex</code>
+            </p>
+          </div>
+        )}
+        {installStatus === "installing" && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-xs text-blue-700 dark:text-blue-400">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {installMsg || "正在安装 Codex CLI..."}
+          </div>
+        )}
 
         {/* Key input */}
         <div className="relative">
@@ -145,13 +242,18 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
           </div>
         )}
 
-        {/* Buttons — 3 in a row */}
+        {/* Buttons */}
         <div className="grid grid-cols-3 gap-2">
           <Button variant="outline" onClick={handleVerify} disabled={isLoading || !apiKey.trim()} className="h-10 text-xs font-medium">
             {status === "checking" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <KeyRound className="mr-1.5 h-3.5 w-3.5" />}
             验证 Key
           </Button>
-          <Button onClick={handleLaunch} disabled={isLoading || !apiKey.trim()} className="h-10 text-xs font-semibold bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white shadow-sm">
+          <Button
+            onClick={handleLaunch}
+            disabled={isLoading || !apiKey.trim() || !codexReady}
+            title={!codexReady ? "请先安装 Codex CLI" : ""}
+            className="h-10 text-xs font-semibold bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white shadow-sm"
+          >
             {status === "writing" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Rocket className="mr-1.5 h-3.5 w-3.5" />}
             一键启动
           </Button>
@@ -161,7 +263,7 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
           </Button>
         </div>
 
-        {/* Usage — compact */}
+        {/* Usage */}
         {billing && (
           <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
             <div className="flex items-center justify-between">

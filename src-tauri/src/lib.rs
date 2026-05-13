@@ -1062,6 +1062,8 @@ pub fn run() {
             commands::open_config_folder,
             commands::pick_directory,
             commands::open_external,
+            commands::check_codex_installed,
+            commands::install_codex_cli,
             commands::setup_and_launch_codex,
             commands::restore_codex_defaults,
             commands::get_init_error,
