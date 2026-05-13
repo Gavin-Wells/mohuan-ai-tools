@@ -18,86 +18,94 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-/// Shell snippet that ensures node package managers (fnm/nvm) are on PATH
-const NODE_ENV_SETUP: &str = r#"export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/usr/local/bin:/opt/homebrew/bin:$PATH" 2>/dev/null; eval "$(fnm env 2>/dev/null)" 2>/dev/null; [ -s "$HOME/.nvm/nvm.sh" ] && . "$HOME/.nvm/nvm.sh" 2>/dev/null"#;
-
-/// Find the absolute path to `codex` binary, searching through fnm/nvm/system paths.
-fn find_codex_binary() -> Option<String> {
-    use std::process::Command;
-
-    let script = format!("{NODE_ENV_SETUP}; which codex 2>/dev/null");
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        if let Ok(out) = Command::new("bash").args(["-c", &script]).output() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if out.status.success() && !path.is_empty() {
-                return Some(path);
-            }
-        }
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(out) = Command::new("cmd").args(["/C", "where codex"]).output() {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if out.status.success() && !path.is_empty() {
-                return Some(path.lines().next().unwrap_or("").to_string());
-            }
-        }
-    }
-
-    None
-}
-
-/// 检测 Codex CLI 是否已安装
+/// 检测 Codex 桌面应用是否已安装
 #[tauri::command]
 pub async fn check_codex_installed() -> Result<serde_json::Value, String> {
-    if let Some(path) = find_codex_binary() {
-        Ok(serde_json::json!({ "installed": true, "path": path }))
+    let path = find_codex_app();
+    if let Some(p) = path {
+        Ok(serde_json::json!({ "installed": true, "path": p }))
     } else {
         Ok(serde_json::json!({ "installed": false, "path": null }))
     }
 }
 
-/// 安装 Codex CLI（npm install -g @openai/codex），返回安装结果
-#[tauri::command]
-pub async fn install_codex_cli() -> Result<String, String> {
-    use std::process::Command;
-
-    let script = format!(
-        "{NODE_ENV_SETUP}; npm install -g @openai/codex 2>&1"
-    );
-
-    #[cfg(not(target_os = "windows"))]
-    let output = Command::new("bash")
-        .args(["-c", &script])
-        .output()
-        .map_err(|e| format!("执行安装命令失败: {e}"))?;
+/// 查找 Codex 桌面应用路径
+fn find_codex_app() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            "/Applications/Codex.app",
+            &format!("{}/Applications/Codex.app", std::env::var("HOME").unwrap_or_default()),
+        ];
+        for p in &candidates {
+            if std::path::Path::new(p).exists() {
+                return Some(p.to_string());
+            }
+        }
+        if let Ok(out) = std::process::Command::new("mdfind")
+            .args(["kMDItemFSName == 'Codex.app'"])
+            .output()
+        {
+            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path.lines().next().map(|s| s.to_string());
+            }
+        }
+        None
+    }
 
     #[cfg(target_os = "windows")]
-    let output = Command::new("cmd")
-        .args(["/C", "npm install -g @openai/codex"])
-        .output()
-        .map_err(|e| format!("执行安装命令失败: {e}"))?;
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    if output.status.success() {
-        Ok(format!("Codex CLI 安装成功\n{stdout}"))
-    } else {
-        Err(format!("安装失败:\n{stdout}\n{stderr}"))
+    {
+        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let candidates = [
+            format!("{local}\\Programs\\Codex\\Codex.exe"),
+            format!("{local}\\Codex\\Codex.exe"),
+            "C:\\Program Files\\Codex\\Codex.exe".to_string(),
+        ];
+        for p in &candidates {
+            if std::path::Path::new(p).exists() {
+                return Some(p.clone());
+            }
+        }
+        None
     }
+
+    #[cfg(target_os = "linux")]
+    {
+        let candidates = [
+            "/usr/bin/codex",
+            "/usr/local/bin/codex",
+            "/snap/bin/codex",
+            &format!("{}/.local/bin/codex", std::env::var("HOME").unwrap_or_default()),
+        ];
+        for p in &candidates {
+            if std::path::Path::new(p).exists() {
+                return Some(p.to_string());
+            }
+        }
+        None
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+    None
 }
 
-/// 一键配置并启动 Codex CLI
-/// 写 ~/.codex/auth.json + config.toml → 在系统终端运行 `codex -m <model>`
+/// 安装 Codex 桌面应用（打开下载页面）
+#[tauri::command]
+pub async fn install_codex_cli(app: AppHandle) -> Result<String, String> {
+    let url = "https://openai.com/index/introducing-codex/";
+    app.opener()
+        .open_url(url, None::<String>)
+        .map_err(|e| format!("打开下载页面失败: {e}"))?;
+    Ok(format!("已打开 Codex 下载页面: {url}"))
+}
+
+/// 一键配置并启动 Codex 桌面应用
+/// 写 ~/.codex/auth.json + config.toml → 打开 Codex.app
 #[tauri::command]
 pub async fn setup_and_launch_codex(
     #[allow(non_snake_case)] apiKey: String,
     #[allow(non_snake_case)] configToml: String,
-    model: Option<String>,
 ) -> Result<String, String> {
     use std::process::Command;
 
@@ -111,76 +119,41 @@ pub async fn setup_and_launch_codex(
     crate::codex_config::write_codex_live_atomic(&auth_value, Some(&configToml))
         .map_err(|e| format!("写入 Codex 配置失败: {e}"))?;
 
-    // 2) Build the codex launch command
-    let model_name = model.as_deref().unwrap_or("gpt-5.5");
-    let codex_cmd = format!("codex -m {model_name}");
-
-    // 3) Write a temp launcher script and run it in the system terminal
-    let temp_dir = std::env::temp_dir();
-    let script_file = temp_dir.join(format!("codex_launcher_{}.sh", std::process::id()));
-    let script_content = format!(
-        "#!/bin/bash\n{node_env}\n{codex_cmd}\n",
-        node_env = NODE_ENV_SETUP,
-        codex_cmd = codex_cmd,
-    );
-    std::fs::write(&script_file, &script_content)
-        .map_err(|e| format!("写入启动脚本失败: {e}"))?;
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&script_file, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("设置脚本权限失败: {e}"))?;
-    }
-
+    // 2) Launch Codex desktop app
     #[cfg(target_os = "macos")]
     {
-        let applescript = format!(
-            "tell application \"Terminal\"\n    activate\n    do script \"bash '{}'\"\nend tell",
-            script_file.display()
-        );
-        let output = Command::new("osascript")
-            .args(["-e", &applescript])
+        let output = Command::new("open")
+            .args(["-a", "Codex"])
             .output()
-            .map_err(|e| format!("启动终端失败: {e}"))?;
+            .map_err(|e| format!("启动 Codex 失败: {e}"))?;
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("osascript 失败: {stderr}"));
+            return Err(format!("启动 Codex.app 失败: {stderr}"));
         }
-        return Ok(format!("已在 Terminal 中启动: {codex_cmd}"));
+        return Ok("Codex 已启动".to_string());
     }
 
     #[cfg(target_os = "windows")]
     {
-        let bat_file = temp_dir.join(format!("codex_launcher_{}.bat", std::process::id()));
-        std::fs::write(&bat_file, format!("@echo off\n{codex_cmd}\npause\n"))
-            .map_err(|e| format!("写入启动脚本失败: {e}"))?;
-        Command::new("cmd")
-            .args(["/C", "start", "cmd", "/K", &bat_file.to_string_lossy().to_string()])
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .map_err(|e| format!("启动 Codex 失败: {e}"))?;
-        return Ok(format!("已在终端中启动: {codex_cmd}"));
+        if let Some(exe_path) = find_codex_app() {
+            Command::new(&exe_path)
+                .creation_flags(CREATE_NO_WINDOW)
+                .spawn()
+                .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+            return Ok("Codex 已启动".to_string());
+        }
+        return Err("未找到 Codex 应用，请先安装".to_string());
     }
 
     #[cfg(target_os = "linux")]
     {
-        let script_path = script_file.to_string_lossy().to_string();
-        for term in &["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"] {
-            if Command::new("which").arg(term).output().map(|o| o.status.success()).unwrap_or(false) {
-                let args: Vec<&str> = if *term == "gnome-terminal" {
-                    vec!["--", "bash", &script_path]
-                } else {
-                    vec!["-e", "bash", &script_path]
-                };
-                Command::new(term)
-                    .args(&args)
-                    .spawn()
-                    .map_err(|e| format!("启动 Codex 失败: {e}"))?;
-                return Ok(format!("已在终端中启动: {codex_cmd}"));
-            }
+        if let Some(bin_path) = find_codex_app() {
+            Command::new(&bin_path)
+                .spawn()
+                .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+            return Ok("Codex 已启动".to_string());
         }
-        return Err("未找到终端模拟器，请手动打开终端运行 codex".to_string());
+        return Err("未找到 Codex 应用，请先安装".to_string());
     }
 
     #[allow(unreachable_code)]

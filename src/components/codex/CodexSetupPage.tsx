@@ -14,7 +14,7 @@ import { MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
 const CODEX_DEFAULT_MODEL = "gpt-5.5";
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
-type InstallStatus = "checking" | "installed" | "not_installed" | "installing" | "install_failed";
+type InstallStatus = "checking" | "installed" | "not_installed" | "opening_download";
 
 interface Billing {
   balance: number;
@@ -38,30 +38,28 @@ function readSavedKey(): string {
 export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onProvidersChanged }: CodexSetupPageProps) {
   const [apiKey, setApiKey] = useState(readSavedKey);
   const [status, setStatus] = useState<Status>(() => readSavedKey() ? "done" : "idle");
-  const [statusMsg, setStatusMsg] = useState(() => readSavedKey() ? "Codex 已配置，可直接使用" : "");
+  const [statusMsg, setStatusMsg] = useState(() => readSavedKey() ? "已配置，可直接启动 Codex" : "");
   const [showKey, setShowKey] = useState(false);
   const [billing, setBilling] = useState<Billing | null>(null);
 
   const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
   const [codexPath, setCodexPath] = useState<string | null>(null);
-  const [installMsg, setInstallMsg] = useState("");
 
-  // Check if codex CLI is installed on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
-        if (result.installed) {
-          setInstallStatus("installed");
-          setCodexPath(result.path);
-        } else {
-          setInstallStatus("not_installed");
-        }
-      } catch {
+  const checkInstall = useCallback(async () => {
+    try {
+      const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
+      if (result.installed) {
+        setInstallStatus("installed");
+        setCodexPath(result.path);
+      } else {
         setInstallStatus("not_installed");
       }
-    })();
+    } catch {
+      setInstallStatus("not_installed");
+    }
   }, []);
+
+  useEffect(() => { checkInstall(); }, [checkInstall]);
 
   const fetchBilling = useCallback(async (key: string) => {
     if (!key.trim()) return;
@@ -76,28 +74,13 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     if (k) fetchBilling(k);
   }, [fetchBilling]);
 
-  const handleInstall = useCallback(async () => {
-    setInstallStatus("installing");
-    setInstallMsg("正在安装 Codex CLI，请稍候...");
+  const handleDownload = useCallback(async () => {
+    setInstallStatus("opening_download");
     try {
       await invoke("install_codex_cli");
-      setInstallMsg("");
-      // Re-check after install
-      const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
-      if (result.installed) {
-        setInstallStatus("installed");
-        setCodexPath(result.path);
-        toast.success("Codex CLI 安装成功");
-      } else {
-        setInstallStatus("install_failed");
-        setInstallMsg("安装命令已执行，但未找到 codex。请在终端手动运行: npm install -g @openai/codex");
-        toast.error("安装后仍未检测到 codex");
-      }
+      toast.success("已打开 Codex 下载页面，安装后点击「重新检测」");
     } catch (err) {
-      setInstallStatus("install_failed");
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setInstallMsg(`安装失败: ${errMsg}`);
-      toast.error("安装失败");
+      toast.error(err instanceof Error ? err.message : String(err));
     }
   }, []);
 
@@ -127,11 +110,7 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     setStatus("writing"); setStatusMsg("正在配置并启动 Codex...");
     try {
       const configToml = generateThirdPartyConfig("openai_custom", MOHUAN_GATEWAY_V1, CODEX_DEFAULT_MODEL);
-      const msg: string = await invoke("setup_and_launch_codex", {
-        apiKey: k,
-        configToml,
-        model: CODEX_DEFAULT_MODEL,
-      });
+      const msg: string = await invoke("setup_and_launch_codex", { apiKey: k, configToml });
       localStorage.setItem("codex_api_key", k);
       fetchBilling(k);
       setStatus("done"); setStatusMsg(msg);
@@ -168,52 +147,47 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold text-foreground">Codex 快速配置</h1>
           <p className="text-xs text-muted-foreground">
-            输入 API Key，一键启动 <code className="px-1 py-0.5 rounded bg-muted text-[11px]">codex -m {CODEX_DEFAULT_MODEL}</code>
+            输入 API Key，一键配置并启动 Codex（默认模型: <code className="px-1 py-0.5 rounded bg-muted text-[11px]">{CODEX_DEFAULT_MODEL}</code>）
           </p>
         </div>
 
-        {/* Codex CLI status banner */}
+        {/* Codex app status */}
         {installStatus === "checking" && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在检测 Codex CLI...
+            正在检测 Codex 应用...
           </div>
         )}
-        {installStatus === "installed" && codexPath && (
+        {installStatus === "installed" && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 text-xs text-green-700 dark:text-green-400">
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-            <span>Codex CLI 已安装: <code className="text-[10px] opacity-75">{codexPath}</code></span>
+            <span>Codex 已安装{codexPath ? `: ${codexPath}` : ""}</span>
           </div>
         )}
-        {(installStatus === "not_installed" || installStatus === "install_failed") && (
+        {(installStatus === "not_installed" || installStatus === "opening_download") && (
           <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 space-y-2">
             <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>未检测到 Codex CLI，需要先安装才能使用</span>
+              <span>未检测到 Codex 应用，请先下载安装</span>
             </div>
-            {installMsg && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-500 pl-5">{installMsg}</p>
-            )}
-            <Button
-              size="sm"
-              onClick={handleInstall}
-              className="w-full h-8 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white"
-            >
-              {installStatus === "install_failed" ? (
-                <><RotateCcw className="mr-1.5 h-3 w-3" />重试安装</>
-              ) : (
-                <><Download className="mr-1.5 h-3 w-3" />一键安装 Codex CLI</>
-              )}
-            </Button>
-            <p className="text-[10px] text-muted-foreground pl-5">
-              等同于运行: <code className="px-1 py-0.5 rounded bg-muted">npm install -g @openai/codex</code>
-            </p>
-          </div>
-        )}
-        {installStatus === "installing" && (
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 text-xs text-blue-700 dark:text-blue-400">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            {installMsg || "正在安装 Codex CLI..."}
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                onClick={handleDownload}
+                className="flex-1 h-8 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white"
+              >
+                <Download className="mr-1.5 h-3 w-3" />
+                下载 Codex
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => { setInstallStatus("checking"); checkInstall(); }}
+                className="h-8 text-xs font-medium"
+              >
+                重新检测
+              </Button>
+            </div>
           </div>
         )}
 
@@ -251,7 +225,7 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
           <Button
             onClick={handleLaunch}
             disabled={isLoading || !apiKey.trim() || !codexReady}
-            title={!codexReady ? "请先安装 Codex CLI" : ""}
+            title={!codexReady ? "请先安装 Codex 应用" : ""}
             className="h-10 text-xs font-semibold bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white shadow-sm"
           >
             {status === "writing" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Rocket className="mr-1.5 h-3.5 w-3.5" />}
