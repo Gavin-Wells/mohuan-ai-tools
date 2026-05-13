@@ -203,7 +203,7 @@ jobs:
 
       - name: Build Tauri App (Windows)
         if: runner.os == 'Windows'
-        run: pnpm tauri build
+        run: pnpm tauri build --bundles nsis
 
       - name: Build Tauri App (Linux)
         if: runner.os == 'Linux'
@@ -301,24 +301,37 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
           $VERSION = $env:GITHUB_REF_NAME
-          $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($null -ne $msi) {
-            $dest = "CC-Switch-$VERSION-Windows.msi"
-            Copy-Item $msi.FullName (Join-Path release-assets $dest)
-            $sigPath = "$($msi.FullName).sig"
+
+          # NSIS installer (.exe in nsis folder)
+          $nsis = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Recurse -Include *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -ne $nsis) {
+            $dest = "CC-Switch-$VERSION-Windows-Setup.exe"
+            Copy-Item $nsis.FullName (Join-Path release-assets $dest)
+            Write-Host "NSIS installer: $dest"
+            $sigPath = "$($nsis.FullName).sig"
             if (Test-Path $sigPath) { Copy-Item $sigPath (Join-Path release-assets ("$dest.sig")) }
+          } else {
+            Write-Host "No NSIS installer found, trying MSI..."
+            $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($null -ne $msi) {
+              $dest = "CC-Switch-$VERSION-Windows.msi"
+              Copy-Item $msi.FullName (Join-Path release-assets $dest)
+              $sigPath = "$($msi.FullName).sig"
+              if (Test-Path $sigPath) { Copy-Item $sigPath (Join-Path release-assets ("$dest.sig")) }
+            }
           }
+
+          # Portable zip
           $exeCandidates = @(
-            'src-tauri/target/release/cc-switch.exe',
             'src-tauri/target/release/mohuan-ai-tools.exe',
-            'src-tauri/target/x86_64-pc-windows-msvc/release/cc-switch.exe'
+            'src-tauri/target/release/cc-switch.exe'
           )
           $exePath = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if ($null -ne $exePath) {
-            $portableDir = 'release-assets/CC-Switch-Portable'
+            $portableDir = 'release-assets/Portable'
             New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
             Copy-Item $exePath $portableDir
-            @('# CC Switch portable build marker', 'portable=true') | Set-Content -Path (Join-Path $portableDir 'portable.ini') -Encoding UTF8
+            @('portable=true') | Set-Content -Path (Join-Path $portableDir 'portable.ini') -Encoding UTF8
             Compress-Archive -Path "$portableDir/*" -DestinationPath "release-assets/CC-Switch-$VERSION-Windows-Portable.zip" -Force
             Remove-Item -Recurse -Force $portableDir
           }
