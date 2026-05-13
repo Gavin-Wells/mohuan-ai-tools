@@ -117,8 +117,22 @@ jobs:
           fi
           echo "✅ Tauri signing key prepared"
 
+      - name: Check Apple certificate availability
+        if: runner.os == 'macOS'
+        id: apple-check
+        shell: bash
+        env:
+          APPLE_CERT: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          if [ -n "$APPLE_CERT" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "⚠️ APPLE_CERTIFICATE not set, skipping macOS code signing"
+          fi
+
       - name: Import Apple signing certificate
-        if: runner.os == 'macOS' && secrets.APPLE_CERTIFICATE != ''
+        if: runner.os == 'macOS' && steps.apple-check.outputs.available == 'true'
         id: apple-cert
         shell: bash
         run: |
@@ -155,7 +169,7 @@ jobs:
           rm -f "$CERT_PATH"
 
       - name: Build Tauri App (macOS with signing)
-        if: runner.os == 'macOS' && steps.apple-cert.outputs.has_identity == 'true'
+        if: runner.os == 'macOS' && steps.apple-check.outputs.available == 'true' && steps.apple-cert.outputs.has_identity == 'true'
         shell: bash
         timeout-minutes: 60
         env:
@@ -182,7 +196,7 @@ jobs:
           done
 
       - name: Build Tauri App (macOS without signing)
-        if: runner.os == 'macOS' && steps.apple-cert.outputs.has_identity != 'true'
+        if: runner.os == 'macOS' && (steps.apple-check.outputs.available != 'true' || steps.apple-cert.outputs.has_identity != 'true')
         shell: bash
         timeout-minutes: 60
         run: pnpm tauri build --target universal-apple-darwin
@@ -263,7 +277,7 @@ jobs:
           ls -la release-assets/ || true
 
       - name: Notarize macOS DMG
-        if: runner.os == 'macOS' && steps.apple-cert.outputs.has_identity == 'true'
+        if: runner.os == 'macOS' && steps.apple-check.outputs.available == 'true' && steps.apple-cert.outputs.has_identity == 'true'
         shell: bash
         timeout-minutes: 30
         continue-on-error: true
