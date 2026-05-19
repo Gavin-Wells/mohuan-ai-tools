@@ -136,7 +136,7 @@ fn find_codex_in_windows_apps() -> Option<PathBuf> {
     let entries = std::fs::read_dir(base).ok()?;
     let mut matches = Vec::new();
     for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy();
+        let name = entry.file_name().to_string_lossy().into_owned();
         if !name.starts_with("OpenAI.Codex_") {
             continue;
         }
@@ -225,8 +225,6 @@ pub async fn setup_and_launch_codex(
     #[allow(non_snake_case)] apiKey: String,
     #[allow(non_snake_case)] configToml: String,
 ) -> Result<String, String> {
-    use std::process::Command;
-
     let api_key = apiKey.trim().to_string();
     if api_key.is_empty() {
         return Err("API Key 不能为空".to_string());
@@ -240,6 +238,7 @@ pub async fn setup_and_launch_codex(
     // 2) Launch Codex desktop app
     #[cfg(target_os = "macos")]
     {
+        use std::process::Command;
         let output = Command::new("open")
             .args(["-a", "Codex"])
             .output()
@@ -259,6 +258,7 @@ pub async fn setup_and_launch_codex(
 
     #[cfg(target_os = "linux")]
     {
+        use std::process::Command;
         if let Some(bin_path) = find_codex_app() {
             Command::new(&bin_path)
                 .spawn()
