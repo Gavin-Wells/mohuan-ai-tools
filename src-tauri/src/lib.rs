@@ -1066,6 +1066,7 @@ pub fn run() {
             commands::install_codex_cli,
             commands::setup_and_launch_codex,
             commands::restore_codex_defaults,
+            commands::open_terminal_with_command,
             commands::get_init_error,
             commands::get_migration_result,
             commands::get_skills_migration_result,

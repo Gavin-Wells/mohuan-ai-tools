@@ -115,18 +115,11 @@ export function MohuanDashboard() {
 
   const launchCli = async (cmd: string) => {
     try {
-      await invoke("plugin:shell|spawn", {
-        program: cmd,
-        args: [],
-      });
+      await invoke("open_terminal_with_command", { command: cmd });
       toast.success(`已启动 ${cmd}`);
-    } catch {
-      try {
-        await invoke("open_terminal_with_command", { command: cmd });
-        toast.success(`已启动 ${cmd}`);
-      } catch (e: any) {
-        toast.error(`启动失败: ${e?.message ?? e}`);
-      }
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`启动失败: ${message}`);
     }
   };
 

@@ -56,18 +56,7 @@ fn find_codex_app() -> Option<String> {
 
     #[cfg(target_os = "windows")]
     {
-        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        let candidates = [
-            format!("{local}\\Programs\\Codex\\Codex.exe"),
-            format!("{local}\\Codex\\Codex.exe"),
-            "C:\\Program Files\\Codex\\Codex.exe".to_string(),
-        ];
-        for p in &candidates {
-            if std::path::Path::new(p).exists() {
-                return Some(p.clone());
-            }
-        }
-        None
+        find_codex_app_windows()
     }
 
     #[cfg(target_os = "linux")]
@@ -90,9 +79,138 @@ fn find_codex_app() -> Option<String> {
     None
 }
 
+#[cfg(target_os = "windows")]
+fn find_codex_app_windows() -> Option<String> {
+    if let Some(path) = find_codex_exe_on_windows() {
+        return Some(path.display().to_string());
+    }
+    if codex_registered_in_start_apps() {
+        return Some("Microsoft Store (Codex)".to_string());
+    }
+    None
+}
+
+/// Locate Codex.exe: static paths, Microsoft Store package dir, then PATH.
+#[cfg(target_os = "windows")]
+fn find_codex_exe_on_windows() -> Option<PathBuf> {
+    use std::process::Command;
+
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let static_candidates = [
+        format!("{local}\\Programs\\Codex\\Codex.exe"),
+        format!("{local}\\Codex\\Codex.exe"),
+        r"C:\Program Files\Codex\Codex.exe".to_string(),
+    ];
+    for p in &static_candidates {
+        let path = PathBuf::from(p);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    if let Some(path) = find_codex_in_windows_apps() {
+        return Some(path);
+    }
+
+    let output = Command::new("where")
+        .arg("codex")
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let first = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .find(|line| !line.trim().is_empty())?
+        .trim()
+        .to_string();
+    let path = PathBuf::from(first);
+    path.is_file().then_some(path)
+}
+
+/// Microsoft Store installs live under `WindowsApps\OpenAI.Codex_*`.
+#[cfg(target_os = "windows")]
+fn find_codex_in_windows_apps() -> Option<PathBuf> {
+    let base = Path::new(r"C:\Program Files\WindowsApps");
+    let entries = std::fs::read_dir(base).ok()?;
+    let mut matches = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy();
+        if !name.starts_with("OpenAI.Codex_") {
+            continue;
+        }
+        let exe = entry
+            .path()
+            .join("app")
+            .join("resources")
+            .join("codex.exe");
+        if exe.is_file() {
+            matches.push(exe);
+        }
+    }
+    matches.sort();
+    matches.pop()
+}
+
+#[cfg(target_os = "windows")]
+fn codex_registered_in_start_apps() -> bool {
+    use std::process::Command;
+
+    let script = r#"$a = Get-StartApps | Where-Object { $_.Name -eq 'Codex' } | Select-Object -First 1; if ($a) { exit 0 } else { exit 1 }"#;
+    Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Launch the Codex desktop app without spawning Store-packaged binaries directly.
+#[cfg(target_os = "windows")]
+fn launch_codex_desktop() -> Result<(), String> {
+    if launch_codex_via_start_apps().is_ok() {
+        return Ok(());
+    }
+    if run_windows_start_command(&["", "Codex"], "Codex Start Menu").is_ok() {
+        return Ok(());
+    }
+    if run_windows_start_command(&["", "codex:"], "Codex protocol").is_ok() {
+        return Ok(());
+    }
+    if let Some(exe) = find_codex_exe_on_windows() {
+        let path = exe.to_string_lossy().to_string();
+        return run_windows_start_command(&["", &path], "Codex");
+    }
+    Err("未找到 Codex 应用，请从 Microsoft Store 安装".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_codex_via_start_apps() -> Result<(), String> {
+    use std::process::Command;
+
+    let script = r#"$a = Get-StartApps | Where-Object { $_.Name -eq 'Codex' } | Select-Object -First 1
+if (-not $a) { exit 1 }
+Start-Process explorer.exe -ArgumentList ('shell:AppsFolder\' + $a.AppId)"#;
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("通过开始菜单启动 Codex 失败: {stderr}"))
+    }
+}
+
 /// 安装 Codex 桌面应用（打开下载页面）
 #[tauri::command]
 pub async fn install_codex_cli(app: AppHandle) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    let url = "https://get.microsoft.com/installer/download/9PLM9XGG6VKS";
+    #[cfg(not(target_os = "windows"))]
     let url = "https://openai.com/index/introducing-codex/";
     app.opener()
         .open_url(url, None::<String>)
@@ -135,14 +253,8 @@ pub async fn setup_and_launch_codex(
 
     #[cfg(target_os = "windows")]
     {
-        if let Some(exe_path) = find_codex_app() {
-            Command::new(&exe_path)
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn()
-                .map_err(|e| format!("启动 Codex 失败: {e}"))?;
-            return Ok("Codex 已启动".to_string());
-        }
-        return Err("未找到 Codex 应用，请先安装".to_string());
+        launch_codex_desktop().map_err(|e| format!("启动 Codex 失败: {e}"))?;
+        return Ok("Codex 已启动".to_string());
     }
 
     #[cfg(target_os = "linux")]
@@ -173,6 +285,20 @@ pub async fn restore_codex_defaults() -> Result<bool, String> {
         std::fs::remove_file(&config_path)
             .map_err(|e| format!("删除 config.toml 失败: {e}"))?;
     }
+    Ok(true)
+}
+
+/// 在用户首选终端中执行一条命令（用于快速启动 Claude / Codex CLI 等）。
+#[tauri::command]
+pub async fn open_terminal_with_command(command: String) -> Result<bool, String> {
+    let command = command.trim().to_string();
+    if command.is_empty() {
+        return Err("命令不能为空".to_string());
+    }
+    let label = command.replace(['/', '\\'], "_");
+    tokio::task::spawn_blocking(move || launch_terminal_running(&command, &label))
+        .await
+        .map_err(|e| format!("启动终端任务失败: {e}"))??;
     Ok(true)
 }
 
