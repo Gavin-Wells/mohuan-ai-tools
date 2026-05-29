@@ -16,13 +16,13 @@
 ## 安装
 
 ### macOS
-下载 `.dmg` 文件，拖入 Applications 文件夹即可。
+下载 `modelswitch-tools-<版本>-macOS.dmg`，拖入 Applications 文件夹即可。
 
 ### Windows
-下载 `.msi` 安装包运行安装。
+下载 `modelswitch-tools-<版本>-Windows-Setup.exe` 安装，或 `modelswitch-tools-<版本>-Windows-Portable.zip` 绿色版。
 
 ### Linux
-下载 `.deb` / `.AppImage` 安装。
+下载 `modelswitch-tools-<版本>-Linux-<架构>.deb` / `.AppImage` 安装。
 
 ## 开发
 

@@ -2912,7 +2912,7 @@ dependencies = [
 
 [[package]]
 name = "mohuan-ai-tools"
-version = "1.0.1"
+version = "1.0.3"
 dependencies = [
  "anyhow",
  "arboard",

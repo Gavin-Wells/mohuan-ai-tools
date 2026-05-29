@@ -216,6 +216,7 @@ jobs:
           set -euxo pipefail
           mkdir -p release-assets
           VERSION="${GITHUB_REF_NAME}"
+          ASSET_PREFIX="modelswitch-tools"
 
           TAR_GZ=""; APP_PATH=""
           for path in \
@@ -231,7 +232,7 @@ jobs:
 
           # Collect updater artifact if exists
           if [ -n "$TAR_GZ" ]; then
-            NEW_TAR_GZ="CC-Switch-${VERSION}-macOS.tar.gz"
+            NEW_TAR_GZ="${ASSET_PREFIX}-${VERSION}-macOS.tar.gz"
             cp "$TAR_GZ" "release-assets/$NEW_TAR_GZ"
             [ -f "$TAR_GZ.sig" ] && cp "$TAR_GZ.sig" "release-assets/$NEW_TAR_GZ.sig" || true
           fi
@@ -240,7 +241,7 @@ jobs:
           if [ -n "$APP_PATH" ]; then
             # Try stapling (may fail without notarization, that's ok)
             xcrun stapler staple "$APP_PATH" 2>/dev/null || true
-            NEW_ZIP="CC-Switch-${VERSION}-macOS.zip"
+            NEW_ZIP="${ASSET_PREFIX}-${VERSION}-macOS.zip"
             ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "release-assets/$NEW_ZIP"
           fi
 
@@ -248,19 +249,20 @@ jobs:
           if [ -n "$APP_PATH" ]; then
             HOMEBREW_NO_AUTO_UPDATE=1 brew install create-dmg 2>/dev/null || true
             if command -v create-dmg >/dev/null 2>&1; then
-              NEW_DMG="CC-Switch-${VERSION}-macOS.dmg"
+              NEW_DMG="${ASSET_PREFIX}-${VERSION}-macOS.dmg"
+              APP_NAME="$(basename "$APP_PATH")"
               DMG_STAGE_DIR="$RUNNER_TEMP/dmg-stage"
               rm -rf "$DMG_STAGE_DIR"
               mkdir -p "$DMG_STAGE_DIR"
-              ditto "$APP_PATH" "$DMG_STAGE_DIR/CC Switch.app"
+              ditto "$APP_PATH" "$DMG_STAGE_DIR/$APP_NAME"
 
               DMG_ARGS=(
-                --volname "CC Switch"
+                --volname "ModelSwitch Tools"
                 --window-size 660 400
                 --window-pos 200 120
                 --icon-size 80
-                --icon "CC Switch.app" 180 220
-                --hide-extension "CC Switch.app"
+                --icon "$APP_NAME" 180 220
+                --hide-extension "$APP_NAME"
                 --app-drop-link 480 220
                 --no-internet-enable
               )
@@ -301,11 +303,12 @@ jobs:
           $ErrorActionPreference = 'Stop'
           New-Item -ItemType Directory -Force -Path release-assets | Out-Null
           $VERSION = $env:GITHUB_REF_NAME
+          $AssetPrefix = "modelswitch-tools"
 
           # NSIS installer (.exe in nsis folder)
           $nsis = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -Recurse -Include *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           if ($null -ne $nsis) {
-            $dest = "CC-Switch-$VERSION-Windows-Setup.exe"
+            $dest = "$AssetPrefix-$VERSION-Windows-Setup.exe"
             Copy-Item $nsis.FullName (Join-Path release-assets $dest)
             Write-Host "NSIS installer: $dest"
             $sigPath = "$($nsis.FullName).sig"
@@ -314,7 +317,7 @@ jobs:
             Write-Host "No NSIS installer found, trying MSI..."
             $msi = Get-ChildItem -Path 'src-tauri/target/release/bundle' -Recurse -Include *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
             if ($null -ne $msi) {
-              $dest = "CC-Switch-$VERSION-Windows.msi"
+              $dest = "$AssetPrefix-$VERSION-Windows.msi"
               Copy-Item $msi.FullName (Join-Path release-assets $dest)
               $sigPath = "$($msi.FullName).sig"
               if (Test-Path $sigPath) { Copy-Item $sigPath (Join-Path release-assets ("$dest.sig")) }
@@ -323,16 +326,16 @@ jobs:
 
           # Portable zip
           $exeCandidates = @(
-            'src-tauri/target/release/mohuan-ai-tools.exe',
-            'src-tauri/target/release/cc-switch.exe'
+            'src-tauri/target/release/modelswitch-tools.exe',
+            'src-tauri/target/release/mohuan-ai-tools.exe'
           )
           $exePath = $exeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
           if ($null -ne $exePath) {
             $portableDir = 'release-assets/Portable'
             New-Item -ItemType Directory -Force -Path $portableDir | Out-Null
-            Copy-Item $exePath $portableDir
+            Copy-Item $exePath (Join-Path $portableDir 'modelswitch-tools.exe')
             @('portable=true') | Set-Content -Path (Join-Path $portableDir 'portable.ini') -Encoding UTF8
-            Compress-Archive -Path "$portableDir/*" -DestinationPath "release-assets/CC-Switch-$VERSION-Windows-Portable.zip" -Force
+            Compress-Archive -Path "$portableDir/*" -DestinationPath "release-assets/$AssetPrefix-$VERSION-Windows-Portable.zip" -Force
             Remove-Item -Recurse -Force $portableDir
           }
 
@@ -344,16 +347,17 @@ jobs:
           mkdir -p release-assets
           VERSION="${GITHUB_REF_NAME}"
           ARCH="${{ matrix.arch || 'x86_64' }}"
+          ASSET_PREFIX="modelswitch-tools"
           APPIMAGE=$(find src-tauri/target/release/bundle -name "*.AppImage" | head -1 || true)
           if [ -n "$APPIMAGE" ]; then
-            NEW="CC-Switch-${VERSION}-Linux-${ARCH}.AppImage"
+            NEW="${ASSET_PREFIX}-${VERSION}-Linux-${ARCH}.AppImage"
             cp "$APPIMAGE" "release-assets/$NEW"
             [ -f "$APPIMAGE.sig" ] && cp "$APPIMAGE.sig" "release-assets/$NEW.sig" || true
           fi
           DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1 || true)
-          [ -n "$DEB" ] && cp "$DEB" "release-assets/CC-Switch-${VERSION}-Linux-${ARCH}.deb" || true
+          [ -n "$DEB" ] && cp "$DEB" "release-assets/${ASSET_PREFIX}-${VERSION}-Linux-${ARCH}.deb" || true
           RPM=$(find src-tauri/target/release/bundle -name "*.rpm" | head -1 || true)
-          [ -n "$RPM" ] && cp "$RPM" "release-assets/CC-Switch-${VERSION}-Linux-${ARCH}.rpm" || true
+          [ -n "$RPM" ] && cp "$RPM" "release-assets/${ASSET_PREFIX}-${VERSION}-Linux-${ARCH}.rpm" || true
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v7
@@ -397,17 +401,19 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
-          name: 模幻AI工具 ${{ github.ref_name }}
+          name: ModelSwitch Tools ${{ github.ref_name }}
           prerelease: false
           body: |
-            ## 模幻AI工具 ${{ github.ref_name }}
+            ## ModelSwitch Tools ${{ github.ref_name }}
 
             Codex 一键配置启动工具（默认模型 gpt-5.5）
 
             ### 下载
 
-            - **macOS**: `.dmg`（推荐）或 `.zip`（解压即用）
-            - **Windows**: `.msi`（安装版）或 `Portable.zip`（绿色版）
+            安装包文件名前缀：`modelswitch-tools`
+
+            - **macOS**: `modelswitch-tools-<tag>-macOS.dmg`（推荐）或 `.zip`
+            - **Windows**: `modelswitch-tools-<tag>-Windows-Setup.exe` 或 `-Portable.zip`
             - **Linux (x86_64)**: `.AppImage` / `.deb` / `.rpm`
             - **Linux (ARM64)**: `.AppImage` / `.deb` / `.rpm`
           files: release-assets/*
