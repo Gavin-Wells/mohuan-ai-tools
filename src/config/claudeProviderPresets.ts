@@ -77,3 +77,16 @@ export const providerPresets: ProviderPreset[] = [
     iconColor: "#0D9488",
   },
 ];
+
+/** 硅基链路 Claude Code live 配置（写入 ~/.claude/settings.json） */
+export function buildMohuanClaudeSettings(apiKey: string): { env: Record<string, string> } {
+  const preset = providerPresets[0];
+  const baseEnv =
+    (preset.settingsConfig as { env?: Record<string, string> }).env ?? {};
+  return {
+    env: {
+      ...baseEnv,
+      ANTHROPIC_AUTH_TOKEN: apiKey.trim(),
+    },
+  };
+}

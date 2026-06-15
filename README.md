@@ -6,8 +6,8 @@
 
 ## 功能特性
 
-- **一键配置** — 自动写入 Claude Code / Codex / Gemini CLI 的配置文件，无需手动编辑
-- **统一网关** — 所有请求走 `https://modelswitch.org/v1`，开箱即用
+- **一键配置** — Claude Code / Codex 输入 API Key 即可写入本地配置并启动
+- **统一网关** — 所有请求走 `https://api.modelswitch.org/v1`，开箱即用
 - **API Key 快捷填入** — 支持从剪贴板一键粘贴 API Key
 - **余额查询** — 登录后实时查看账户余额和用量统计
 - **一键启动** — 快速启动 Claude Code / Codex 命令行工具

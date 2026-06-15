@@ -288,6 +288,166 @@ pub async fn restore_codex_defaults() -> Result<bool, String> {
     Ok(true)
 }
 
+const MOHUAN_CLAUDE_ENV_KEYS: &[&str] = &[
+    "ANTHROPIC_BASE_URL",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_MODEL",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+];
+
+fn resolve_executable_path(tool: &str) -> Option<String> {
+    use std::process::Command;
+
+    #[cfg(target_os = "windows")]
+    {
+        let output = Command::new("where")
+            .arg(tool)
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        return String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| line.trim().to_string());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let output = Command::new("which").arg(tool).output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if path.is_empty() {
+            None
+        } else {
+            Some(path)
+        }
+    }
+}
+
+fn find_claude_cli() -> Option<String> {
+    if try_get_version("claude").0.is_some() {
+        return resolve_executable_path("claude");
+    }
+    if scan_cli_version("claude").0.is_some() {
+        return resolve_executable_path("claude");
+    }
+    None
+}
+
+fn merge_claude_settings_env(settings_patch: &serde_json::Value) -> Result<(), String> {
+    use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
+    use crate::services::provider::sanitize_claude_settings_for_live;
+
+    let path = get_claude_settings_path();
+    let mut settings: serde_json::Value = if path.exists() {
+        read_json_file(&path).map_err(|e| e.to_string())?
+    } else {
+        serde_json::json!({})
+    };
+
+    let Some(patch_env) = settings_patch.get("env").and_then(|v| v.as_object()) else {
+        return Err("Claude 配置缺少 env 字段".to_string());
+    };
+
+    let settings_obj = settings
+        .as_object_mut()
+        .ok_or_else(|| "Claude settings.json 根节点必须是对象".to_string())?;
+    let env = settings_obj
+        .entry("env")
+        .or_insert_with(|| serde_json::json!({}));
+    let env_obj = env
+        .as_object_mut()
+        .ok_or_else(|| "Claude settings.json env 必须是对象".to_string())?;
+    for (key, value) in patch_env {
+        env_obj.insert(key.clone(), value.clone());
+    }
+
+    let sanitized = sanitize_claude_settings_for_live(&settings);
+    write_json_file(&path, &sanitized).map_err(|e| e.to_string())
+}
+
+fn restore_claude_mohuan_env() -> Result<(), String> {
+    use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
+
+    let path = get_claude_settings_path();
+    if !path.exists() {
+        return Ok(());
+    }
+
+    let mut settings: serde_json::Value =
+        read_json_file(&path).map_err(|e| e.to_string())?;
+    if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+        for key in MOHUAN_CLAUDE_ENV_KEYS {
+            env.remove(*key);
+        }
+        if env.is_empty() {
+            if let Some(obj) = settings.as_object_mut() {
+                obj.remove("env");
+            }
+        }
+    }
+
+    write_json_file(&path, &settings).map_err(|e| e.to_string())
+}
+
+/// 检测 Claude Code CLI 是否已安装
+#[tauri::command]
+pub async fn check_claude_installed() -> Result<serde_json::Value, String> {
+    if let Some(path) = find_claude_cli() {
+        Ok(serde_json::json!({ "installed": true, "path": path }))
+    } else {
+        Ok(serde_json::json!({ "installed": false, "path": null }))
+    }
+}
+
+/// 打开 Claude Code 安装说明
+#[tauri::command]
+pub async fn install_claude_cli(app: AppHandle) -> Result<String, String> {
+    let url = "https://docs.anthropic.com/en/docs/claude-code/setup";
+    app.opener()
+        .open_url(url, None::<String>)
+        .map_err(|e| format!("打开安装页面失败: {e}"))?;
+    Ok(format!("已打开 Claude Code 安装页面: {url}"))
+}
+
+/// 一键配置并启动 Claude Code（写入 ~/.claude/settings.json + 打开终端）
+#[tauri::command]
+pub async fn setup_and_launch_claude(
+    #[allow(non_snake_case)] apiKey: String,
+    #[allow(non_snake_case)] settingsConfig: serde_json::Value,
+) -> Result<String, String> {
+    let api_key = apiKey.trim().to_string();
+    if api_key.is_empty() {
+        return Err("API Key 不能为空".to_string());
+    }
+
+    if find_claude_cli().is_none() {
+        return Err("未检测到 Claude Code CLI，请先安装".to_string());
+    }
+
+    merge_claude_settings_env(&settingsConfig)?;
+
+    tokio::task::spawn_blocking(|| launch_terminal_running("claude", "claude"))
+        .await
+        .map_err(|e| format!("启动终端任务失败: {e}"))??;
+
+    Ok("Claude Code 已配置并启动".to_string())
+}
+
+/// 还原 Claude Code 硅基链路相关环境变量
+#[tauri::command]
+pub async fn restore_claude_defaults() -> Result<bool, String> {
+    restore_claude_mohuan_env()?;
+    Ok(true)
+}
+
 /// 在用户首选终端中执行一条命令（用于快速启动 Claude / Codex CLI 等）。
 #[tauri::command]
 pub async fn open_terminal_with_command(command: String) -> Result<bool, String> {

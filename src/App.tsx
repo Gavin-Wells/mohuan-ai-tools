@@ -91,6 +91,7 @@ import OpenClawHealthBanner from "@/components/openclaw/OpenClawHealthBanner";
 import HermesMemoryPanel from "@/components/hermes/HermesMemoryPanel";
 import { MohuanDashboard } from "@/components/mohuan/MohuanDashboard";
 import { CodexSetupPage } from "@/components/codex/CodexSetupPage";
+import { ClaudeSetupPage } from "@/components/claude/ClaudeSetupPage";
 
 type View =
   | "providers"
@@ -965,6 +966,14 @@ function App() {
         case "dashboard":
           return <MohuanDashboard />;
         default:
+          if (activeApp === "claude") {
+            return (
+              <ClaudeSetupPage
+                providers={providers}
+                onProvidersChanged={handleImportSuccess}
+              />
+            );
+          }
           if (activeApp === "codex") {
             return (
               <CodexSetupPage
