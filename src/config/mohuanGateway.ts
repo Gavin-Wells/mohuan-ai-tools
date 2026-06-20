@@ -11,7 +11,7 @@ export const MOHUAN_ANTHROPIC_BASE_URL = "https://api.modelswitch.org";
 export const MOHUAN_WEB_URL = "https://modelswitch.org/";
 
 /** Claude Code 默认模型（与 ploy-api 官方定价目录对齐） */
-export const MOHUAN_DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6";
+export const MOHUAN_DEFAULT_CLAUDE_MODEL = "claude-opus-4-8";
 export const MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-4-6";
 export const MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL = "claude-opus-4-8";
 export const MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL = "claude-haiku-4-5-20251001";

@@ -161,7 +161,7 @@ export const OMO_BUILTIN_CATEGORIES: OmoCategoryDef[] = [
     display: "Unspecified High",
     descKey: "omo.categoryDesc.unspecifiedHigh",
     tooltipKey: "omo.categoryTooltip.unspecifiedHigh",
-    recommended: "claude-opus-4-7",
+    recommended: "claude-opus-4-8",
   },
   {
     key: "writing",
