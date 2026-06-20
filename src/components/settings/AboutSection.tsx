@@ -23,7 +23,6 @@ import { toast } from "sonner";
 import { getVersion } from "@tauri-apps/api/app";
 import { settingsApi } from "@/lib/api";
 import { useUpdate } from "@/contexts/UpdateContext";
-import { relaunchApp } from "@/lib/updater";
 import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import appIcon from "@/assets/icons/app-icon.png";
@@ -104,6 +103,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
     updateHandle,
     checkUpdate,
     resetDismiss,
+    applyUpdate,
     isChecking,
   } = useUpdate();
 
@@ -256,7 +256,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
   }, [t, updateInfo?.availableVersion, version]);
 
   const handleCheckUpdate = useCallback(async () => {
-    if (hasUpdate && updateHandle) {
+    if (hasUpdate) {
       if (isPortable) {
         try {
           await settingsApi.checkUpdates();
@@ -269,8 +269,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
       setIsDownloading(true);
       try {
         resetDismiss();
-        await updateHandle.downloadAndInstall();
-        await relaunchApp();
+        await applyUpdate();
       } catch (error) {
         console.error("[AboutSection] Update failed", error);
         toast.error(t("settings.updateFailed"));
@@ -297,7 +296,7 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
       console.error("[AboutSection] Check update failed", error);
       toast.error(t("settings.checkUpdateFailed"));
     }
-  }, [checkUpdate, hasUpdate, isPortable, resetDismiss, t, updateHandle]);
+  }, [applyUpdate, checkUpdate, hasUpdate, isPortable, resetDismiss, t]);
 
   const handleCopyInstallCommands = useCallback(async () => {
     try {

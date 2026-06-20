@@ -1,6 +1,6 @@
 [package]
 name = "mohuan-ai-tools"
-version = "1.0.6"
+version = "1.0.7"
 description = "模幻AI工具 — 硅基链路网关一键配置"
 authors = []
 license = "MIT"

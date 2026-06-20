@@ -765,13 +765,13 @@ pub async fn copy_text_to_clipboard(text: String) -> Result<bool, String> {
     .map_err(|e| format!("剪贴板任务执行失败: {e}"))?
 }
 
-/// 检查更新
+/// 检查更新（便携版回退：打开网站下载页）
 #[tauri::command]
 pub async fn check_for_updates(handle: AppHandle) -> Result<bool, String> {
     handle
         .opener()
         .open_url(
-            "https://github.com/farion1231/cc-switch/releases/latest",
+            "https://modelswitch.org/#tool",
             None::<String>,
         )
         .map_err(|e| format!("打开更新页面失败: {e}"))?;

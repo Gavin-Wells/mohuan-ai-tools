@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { UpdateProvider } from "./contexts/UpdateContext";
+import { ForceUpdateDialog } from "./components/ForceUpdateDialog";
 import "./index.css";
 // 导入国际化配置
 import i18n from "./i18n";
@@ -92,6 +93,7 @@ async function bootstrap() {
         <ThemeProvider defaultTheme="system" storageKey="mohuan-ai-theme">
           <UpdateProvider>
             <App />
+            <ForceUpdateDialog />
             <Toaster />
           </UpdateProvider>
         </ThemeProvider>
