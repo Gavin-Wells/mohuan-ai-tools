@@ -57,6 +57,7 @@ import {
   DRAG_REGION_STYLE,
 } from "@/lib/platform";
 import { AppSwitcher } from "@/components/AppSwitcher";
+import { MOHUAN_ENABLED_APPS, MOHUAN_VISIBLE_APPS } from "@/config/appConfig";
 import { ProviderList } from "@/components/providers/ProviderList";
 import { AddProviderDialog } from "@/components/providers/AddProviderDialog";
 import { EditProviderDialog } from "@/components/providers/EditProviderDialog";
@@ -120,22 +121,14 @@ const DEFAULT_DRAG_BAR_HEIGHT = isWindows() || isLinux() ? 0 : 28; // px
 const HEADER_HEIGHT = 64; // px
 
 const STORAGE_KEY = "mohuan-ai-last-app";
-const VALID_APPS: AppId[] = [
-  "claude",
-  "claude-desktop",
-  "codex",
-  "gemini",
-  "opencode",
-  "openclaw",
-  "hermes",
-];
+const VALID_APPS: AppId[] = MOHUAN_ENABLED_APPS;
 
 const getInitialApp = (): AppId => {
   const saved = localStorage.getItem(STORAGE_KEY) as AppId | null;
   if (saved && VALID_APPS.includes(saved)) {
     return saved;
   }
-  return "codex";
+  return "claude";
 };
 
 const VIEW_STORAGE_KEY = "mohuan-ai-last-view";
@@ -183,25 +176,12 @@ function App() {
     isLinux() && (settingsData?.useAppWindowControls ?? false);
   const dragBarHeight = useAppWindowControls ? 32 : DEFAULT_DRAG_BAR_HEIGHT;
   const contentTopOffset = dragBarHeight + HEADER_HEIGHT;
-  const visibleApps: VisibleApps = settingsData?.visibleApps ?? {
-    claude: true,
-    "claude-desktop": true,
-    codex: true,
-    gemini: true,
-    opencode: true,
-    openclaw: true,
-    hermes: true,
-  };
+  const visibleApps: VisibleApps = MOHUAN_VISIBLE_APPS;
 
   const getFirstVisibleApp = (): AppId => {
     if (visibleApps.claude) return "claude";
-    if (visibleApps["claude-desktop"]) return "claude-desktop";
     if (visibleApps.codex) return "codex";
-    if (visibleApps.gemini) return "gemini";
-    if (visibleApps.opencode) return "opencode";
-    if (visibleApps.openclaw) return "openclaw";
-    if (visibleApps.hermes) return "hermes";
-    return "claude"; // fallback
+    return "claude";
   };
 
   useEffect(() => {
@@ -1276,7 +1256,8 @@ function App() {
               activeApp !== "opencode" &&
               activeApp !== "openclaw" &&
               activeApp !== "hermes" &&
-              activeApp !== "codex" && (
+              activeApp !== "codex" &&
+              activeApp !== "claude" && (
                 <div
                   className="flex shrink-0 items-center gap-1.5"
                   style={{ WebkitAppRegion: "no-drag" } as any}
@@ -1412,7 +1393,7 @@ function App() {
                       compact={isToolbarCompact}
                     />
 
-                    {activeApp !== "codex" && (<>
+                    {activeApp !== "codex" && activeApp !== "claude" && (<>
                     <div className="flex items-center gap-1 p-1 bg-muted rounded-xl">
                       <AnimatePresence mode="wait">
                         <motion.div

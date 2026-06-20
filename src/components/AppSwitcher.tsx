@@ -1,4 +1,5 @@
 import type { AppId } from "@/lib/api";
+import { MOHUAN_ENABLED_APPS } from "@/config/appConfig";
 import type { VisibleApps } from "@/types";
 import { ProviderIcon } from "@/components/ProviderIcon";
 import { cn } from "@/lib/utils";
@@ -10,16 +11,8 @@ interface AppSwitcherProps {
   compact?: boolean;
 }
 
-const ALL_APPS: AppId[] = [
-  "claude",
-  "claude-desktop",
-  "codex",
-  "gemini",
-  "opencode",
-  "openclaw",
-  "hermes",
-];
-const STORAGE_KEY = "cc-switch-last-app";
+const ALL_APPS: AppId[] = MOHUAN_ENABLED_APPS;
+const STORAGE_KEY = "mohuan-ai-last-app";
 
 export function AppSwitcher({
   activeApp,

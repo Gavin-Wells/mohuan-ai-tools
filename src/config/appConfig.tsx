@@ -1,5 +1,6 @@
 import React from "react";
 import type { AppId } from "@/lib/api/types";
+import type { VisibleApps } from "@/types";
 import {
   ClaudeIcon,
   CodexIcon,
@@ -15,27 +16,26 @@ export interface AppConfig {
   badgeClass: string;
 }
 
-export const APP_IDS: AppId[] = [
-  "claude",
-  "claude-desktop",
-  "codex",
-  "gemini",
-  "opencode",
-  "openclaw",
-  "hermes",
-];
+export const APP_IDS: AppId[] = ["claude", "codex"];
 
-/** App IDs shown in Skills panels (excludes OpenClaw — it doesn't support Skills) */
-export const SKILLS_APP_IDS: AppId[] = [
-  "claude",
-  "codex",
-  "gemini",
-  "opencode",
-  "hermes",
-];
+/** 模幻AI工具仅启用 Claude Code 与 Codex */
+export const MOHUAN_ENABLED_APPS: AppId[] = ["claude", "codex"];
 
-/** App IDs shown in MCP panels (excludes OpenClaw) */
-export const MCP_APP_IDS: AppId[] = [...SKILLS_APP_IDS];
+export const MOHUAN_VISIBLE_APPS: VisibleApps = {
+  claude: true,
+  codex: true,
+  "claude-desktop": false,
+  gemini: false,
+  opencode: false,
+  openclaw: false,
+  hermes: false,
+};
+
+/** App IDs shown in Skills panels */
+export const SKILLS_APP_IDS: AppId[] = ["claude", "codex"];
+
+/** App IDs shown in MCP panels */
+export const MCP_APP_IDS: AppId[] = ["claude", "codex"];
 
 export const APP_ICON_MAP: Record<AppId, AppConfig> = {
   claude: {
