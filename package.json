@@ -1,6 +1,6 @@
 {
   "name": "mohuan-ai-tools",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "模幻AI工具 — 硅基链路（modelswitch.org）一键配置",
   "type": "module",
   "scripts": {

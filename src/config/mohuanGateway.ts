@@ -4,7 +4,10 @@
  */
 export const MOHUAN_GATEWAY_ORIGIN = "https://modelswitch.org";
 export const MOHUAN_API_ORIGIN = "https://api.modelswitch.org";
+/** OpenAI 兼容端点（Codex 等），需带 /v1 */
 export const MOHUAN_GATEWAY_V1 = "https://api.modelswitch.org/v1";
+/** Claude Code ANTHROPIC_BASE_URL：勿带 /v1（SDK 会自动追加 /v1/messages） */
+export const MOHUAN_ANTHROPIC_BASE_URL = "https://api.modelswitch.org";
 export const MOHUAN_WEB_URL = "https://modelswitch.org/";
 
 /** Claude Code 默认模型（与 ploy-api 官方定价目录对齐） */
