@@ -41,7 +41,7 @@ pub const DEFAULT_PROXY_ROUTES: &[ClaudeDesktopDefaultRoute] = &[
         supports_1m: true,
     },
     ClaudeDesktopDefaultRoute {
-        route_id: "claude-opus-4-7",
+        route_id: "claude-opus-4-8",
         env_key: "ANTHROPIC_DEFAULT_OPUS_MODEL",
         display_name: "Opus",
         supports_1m: true,
@@ -1186,9 +1186,9 @@ mod tests {
         let models = model_list_response(&provider).expect("model list");
         assert_eq!(models["data"][0]["id"], json!("claude-sonnet-4-6 [1M]"));
 
-        let err = map_proxy_request_model(json!({"model": "claude-opus-4-7"}), &provider)
+        let err = map_proxy_request_model(json!({"model": "claude-opus-4-8"}), &provider)
             .expect_err("unknown route should fail");
-        assert!(err.to_string().contains("claude-opus-4-7"));
+        assert!(err.to_string().contains("claude-opus-4-8"));
     }
 
     #[test]

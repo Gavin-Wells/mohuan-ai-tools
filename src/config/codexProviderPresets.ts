@@ -4,7 +4,7 @@
 import { ProviderCategory } from "../types";
 import type { PresetTheme } from "./claudeProviderPresets";
 import {
-  MOHUAN_DEFAULT_CHAT_MODEL,
+  MOHUAN_DEFAULT_CODEX_MODEL,
   MOHUAN_GATEWAY_V1,
   MOHUAN_WEB_URL,
 } from "./mohuanGateway";
@@ -36,7 +36,7 @@ export function generateThirdPartyAuth(apiKey: string): Record<string, any> {
 export function generateThirdPartyConfig(
   providerName: string,
   baseUrl: string,
-  modelName = MOHUAN_DEFAULT_CHAT_MODEL,
+  modelName = MOHUAN_DEFAULT_CODEX_MODEL,
 ): string {
   const cleanProviderName =
     providerName
@@ -65,7 +65,7 @@ export const codexProviderPresets: CodexProviderPreset[] = [
     config: generateThirdPartyConfig(
       "modelswitch",
       MOHUAN_GATEWAY_V1,
-      MOHUAN_DEFAULT_CHAT_MODEL,
+      MOHUAN_DEFAULT_CODEX_MODEL,
     ),
     category: "third_party",
     endpointCandidates: [MOHUAN_GATEWAY_V1],

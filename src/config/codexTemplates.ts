@@ -2,7 +2,7 @@
  * Codex 配置模板（模幻 — 硅基链路网关）
  */
 import {
-  MOHUAN_DEFAULT_CHAT_MODEL,
+  MOHUAN_DEFAULT_CODEX_MODEL,
   MOHUAN_GATEWAY_V1,
 } from "./mohuanGateway";
 
@@ -13,7 +13,7 @@ export interface CodexTemplate {
 
 export function getCodexCustomTemplate(): CodexTemplate {
   const config = `model_provider = "custom"
-model = "${MOHUAN_DEFAULT_CHAT_MODEL}"
+model = "${MOHUAN_DEFAULT_CODEX_MODEL}"
 model_reasoning_effort = "high"
 disable_response_storage = true
 

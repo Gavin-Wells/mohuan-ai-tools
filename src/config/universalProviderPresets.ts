@@ -8,8 +8,12 @@ import type {
   UniversalProviderModels,
 } from "@/types";
 import {
-  MOHUAN_DEFAULT_CHAT_MODEL,
-  MOHUAN_DEFAULT_FLASH_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL,
+  MOHUAN_DEFAULT_CODEX_MODEL,
+  MOHUAN_DEFAULT_GEMINI_MODEL,
   MOHUAN_GATEWAY_V1,
   MOHUAN_WEB_URL,
 } from "./mohuanGateway";
@@ -28,17 +32,17 @@ export interface UniversalProviderPreset {
 
 const MOHUAN_DEFAULT_MODELS: UniversalProviderModels = {
   claude: {
-    model: MOHUAN_DEFAULT_CHAT_MODEL,
-    haikuModel: MOHUAN_DEFAULT_FLASH_MODEL,
-    sonnetModel: MOHUAN_DEFAULT_CHAT_MODEL,
-    opusModel: MOHUAN_DEFAULT_CHAT_MODEL,
+    model: MOHUAN_DEFAULT_CLAUDE_MODEL,
+    haikuModel: MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
+    sonnetModel: MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL,
+    opusModel: MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL,
   },
   codex: {
-    model: MOHUAN_DEFAULT_CHAT_MODEL,
+    model: MOHUAN_DEFAULT_CODEX_MODEL,
     reasoningEffort: "high",
   },
   gemini: {
-    model: MOHUAN_DEFAULT_CHAT_MODEL,
+    model: MOHUAN_DEFAULT_GEMINI_MODEL,
   },
 };
 

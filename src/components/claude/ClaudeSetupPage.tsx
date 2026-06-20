@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildMohuanClaudeSettings } from "@/config/claudeProviderPresets";
-import { MOHUAN_DEFAULT_CHAT_MODEL, MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
+import { MOHUAN_DEFAULT_CLAUDE_MODEL, MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
 type InstallStatus = "checking" | "installed" | "not_installed" | "installing";
@@ -173,7 +173,7 @@ export function ClaudeSetupPage({ providers: _providers, onProvidersChanged: _on
           <h1 className="text-xl font-bold text-foreground">Claude Code 快速配置</h1>
           <p className="text-xs text-muted-foreground">
             输入 API Key，一键写入 Claude Code 配置并启动（默认模型:{" "}
-            <code className="px-1 py-0.5 rounded bg-muted text-[11px]">{MOHUAN_DEFAULT_CHAT_MODEL}</code>）
+            <code className="px-1 py-0.5 rounded bg-muted text-[11px]">{MOHUAN_DEFAULT_CLAUDE_MODEL}</code>）
           </p>
         </div>
 

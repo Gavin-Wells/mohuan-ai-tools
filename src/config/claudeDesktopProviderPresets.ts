@@ -4,8 +4,9 @@
 import { ProviderCategory } from "../types";
 import type { PresetTheme } from "./claudeProviderPresets";
 import {
-  MOHUAN_DEFAULT_CHAT_MODEL,
-  MOHUAN_DEFAULT_FLASH_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL,
+  MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL,
   MOHUAN_GATEWAY_V1,
   MOHUAN_WEB_URL,
 } from "./mohuanGateway";
@@ -55,7 +56,7 @@ const brandedRoutes = (
     supports1m,
   },
   {
-    routeId: "claude-opus-4-7",
+    routeId: "claude-opus-4-8",
     upstreamModel: opus,
     displayName: opus,
     supports1m,
@@ -78,9 +79,9 @@ export const claudeDesktopProviderPresets: ClaudeDesktopProviderPreset[] = [
     mode: "proxy",
     apiFormat: "openai_chat",
     modelRoutes: brandedRoutes(
-      MOHUAN_DEFAULT_CHAT_MODEL,
-      MOHUAN_DEFAULT_CHAT_MODEL,
-      MOHUAN_DEFAULT_FLASH_MODEL,
+      MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL,
+      MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL,
+      MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
     ),
     endpointCandidates: [MOHUAN_GATEWAY_V1],
     icon: "generic",

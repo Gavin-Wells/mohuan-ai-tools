@@ -1,6 +1,6 @@
 import type { ProviderCategory } from "@/types";
 import {
-  MOHUAN_DEFAULT_CHAT_MODEL,
+  MOHUAN_DEFAULT_GEMINI_MODEL,
   MOHUAN_GATEWAY_V1,
   MOHUAN_WEB_URL,
 } from "./mohuanGateway";
@@ -38,11 +38,11 @@ export const geminiProviderPresets: GeminiProviderPreset[] = [
       env: {
         GOOGLE_GEMINI_BASE_URL: MOHUAN_GATEWAY_V1,
         GEMINI_API_KEY: "",
-        GEMINI_MODEL: MOHUAN_DEFAULT_CHAT_MODEL,
+        GEMINI_MODEL: MOHUAN_DEFAULT_GEMINI_MODEL,
       },
     },
     baseURL: MOHUAN_GATEWAY_V1,
-    model: MOHUAN_DEFAULT_CHAT_MODEL,
+    model: MOHUAN_DEFAULT_GEMINI_MODEL,
     description: "通过硅基链路网关调用（OpenAI 兼容路径，模型以后台配置为准）",
     category: "third_party",
     endpointCandidates: [MOHUAN_GATEWAY_V1],
