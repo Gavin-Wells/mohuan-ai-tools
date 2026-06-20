@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import {
@@ -12,7 +12,7 @@ import { buildMohuanClaudeSettings } from "@/config/claudeProviderPresets";
 import { MOHUAN_DEFAULT_CHAT_MODEL, MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
-type InstallStatus = "checking" | "installed" | "not_installed" | "opening_download";
+type InstallStatus = "checking" | "installed" | "not_installed" | "installing";
 
 interface Billing {
   balance: number;
@@ -42,22 +42,60 @@ export function ClaudeSetupPage({ providers: _providers, onProvidersChanged: _on
 
   const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
   const [claudePath, setClaudePath] = useState<string | null>(null);
+  const autoInstallStarted = useRef(false);
 
-  const checkInstall = useCallback(async () => {
-    try {
-      const result = await invoke<{ installed: boolean; path: string | null }>("check_claude_installed");
+  const applyInstallResult = useCallback(
+    (result: { installed: boolean; path: string | null }) => {
       if (result.installed) {
         setInstallStatus("installed");
         setClaudePath(result.path);
       } else {
         setInstallStatus("not_installed");
       }
+    },
+    [],
+  );
+
+  const checkInstall = useCallback(async () => {
+    setInstallStatus("checking");
+    try {
+      const result = await invoke<{ installed: boolean; path: string | null }>("check_claude_installed");
+      applyInstallResult(result);
+      return result;
     } catch {
       setInstallStatus("not_installed");
+      return { installed: false, path: null };
     }
-  }, []);
+  }, [applyInstallResult]);
 
-  useEffect(() => { checkInstall(); }, [checkInstall]);
+  const runInstall = useCallback(async () => {
+    setInstallStatus("installing");
+    try {
+      const msg = await invoke<string>("install_claude_cli");
+      toast.success(msg || "Claude Code 安装完成");
+      const result = await invoke<{ installed: boolean; path: string | null }>("check_claude_installed");
+      applyInstallResult(result);
+      if (!result.installed) {
+        toast.message("安装脚本已执行，若仍未检测到请稍候后点击「重新检测」");
+      }
+    } catch (err) {
+      setInstallStatus("not_installed");
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [applyInstallResult]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const result = await checkInstall();
+      if (cancelled || result.installed || autoInstallStarted.current) return;
+      autoInstallStarted.current = true;
+      await runInstall();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [checkInstall, runInstall]);
 
   const fetchBilling = useCallback(async (key: string) => {
     if (!key.trim()) return;
@@ -71,16 +109,6 @@ export function ClaudeSetupPage({ providers: _providers, onProvidersChanged: _on
     const k = readSavedKey();
     if (k) fetchBilling(k);
   }, [fetchBilling]);
-
-  const handleDownload = useCallback(async () => {
-    setInstallStatus("opening_download");
-    try {
-      await invoke("install_claude_cli");
-      toast.success("已打开 Claude Code 安装页面，安装后点击「重新检测」");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
 
   const handleVerify = useCallback(async () => {
     const k = apiKey.trim();
@@ -155,31 +183,37 @@ export function ClaudeSetupPage({ providers: _providers, onProvidersChanged: _on
             正在检测 Claude Code CLI...
           </div>
         )}
+        {installStatus === "installing" && (
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            正在自动安装 Claude Code...
+          </div>
+        )}
         {installStatus === "installed" && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 text-xs text-green-700 dark:text-green-400">
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
             <span>Claude Code 已安装{claudePath ? `: ${claudePath}` : ""}</span>
           </div>
         )}
-        {(installStatus === "not_installed" || installStatus === "opening_download") && (
+        {installStatus === "not_installed" && (
           <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 space-y-2">
             <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>未检测到 Claude Code CLI，请先安装</span>
+              <span>未检测到 Claude Code CLI，可重试自动安装</span>
             </div>
             <div className="flex gap-2">
               <Button
                 size="sm"
-                onClick={handleDownload}
+                onClick={runInstall}
                 className="flex-1 h-8 text-xs font-medium bg-amber-600 hover:bg-amber-700 text-white"
               >
                 <Download className="mr-1.5 h-3 w-3" />
-                安装 Claude Code
+                重新安装
               </Button>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => { setInstallStatus("checking"); checkInstall(); }}
+                onClick={checkInstall}
                 className="h-8 text-xs font-medium"
               >
                 重新检测

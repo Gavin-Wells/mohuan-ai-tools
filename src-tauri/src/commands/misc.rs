@@ -18,6 +18,105 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+const CLAUDE_INSTALL_SCRIPT: &str = "https://claude.ai/install.sh";
+const CODEX_INSTALL_SCRIPT: &str = "https://chatgpt.com/codex/install.sh";
+
+#[cfg(target_os = "macos")]
+fn macos_wifi_http_proxy() -> Option<String> {
+    use std::process::Command;
+
+    let output = Command::new("networksetup")
+        .args(["-getwebproxy", "Wi-Fi"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut enabled = false;
+    let mut server = String::new();
+    let mut port = String::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("Enabled:") {
+            enabled = rest.trim().eq_ignore_ascii_case("yes");
+        } else if let Some(rest) = line.strip_prefix("Server:") {
+            server = rest.trim().to_string();
+        } else if let Some(rest) = line.strip_prefix("Port:") {
+            port = rest.trim().to_string();
+        }
+    }
+    if enabled && !server.is_empty() && !port.is_empty() {
+        Some(format!("http://{server}:{port}"))
+    } else {
+        None
+    }
+}
+
+fn proxy_env_for_subprocess() -> Vec<(String, String)> {
+    let mut vars = Vec::new();
+    for key in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"] {
+        if let Ok(value) = std::env::var(key) {
+            if !value.trim().is_empty() {
+                vars.push((key.to_string(), value));
+            }
+        }
+    }
+    if !vars.is_empty() {
+        return vars;
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(proxy) = macos_wifi_http_proxy() {
+        for key in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"] {
+            vars.push((key.to_string(), proxy.clone()));
+        }
+    }
+    vars
+}
+
+fn run_curl_pipe_bash_install(script_url: &str, tool_label: &str) -> Result<(), String> {
+    use std::process::Command;
+
+    #[cfg(target_os = "windows")]
+    {
+        let ps_url = script_url.replace("/install.sh", "/install.ps1");
+        let ps = format!("$ProgressPreference='SilentlyContinue'; irm '{ps_url}' | iex");
+        let mut cmd = Command::new("powershell");
+        cmd.args(["-NoProfile", "-NonInteractive", "-Command", &ps]);
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        for (key, value) in proxy_env_for_subprocess() {
+            cmd.env(key, value);
+        }
+        let output = cmd
+            .output()
+            .map_err(|e| format!("启动 {tool_label} 安装失败: {e}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Err(format!("{tool_label} 安装失败: {stderr}{stdout}"))
+        }
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let shell_cmd = format!("curl -fsSL '{script_url}' | bash");
+        let mut cmd = Command::new("bash");
+        cmd.args(["-lc", &shell_cmd]);
+        for (key, value) in proxy_env_for_subprocess() {
+            cmd.env(key, value);
+        }
+        let output = cmd
+            .output()
+            .map_err(|e| format!("启动 {tool_label} 安装失败: {e}"))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Err(format!("{tool_label} 安装失败: {stderr}{stdout}"))
+        }
+    }
+}
+
 /// 检测 Codex 桌面应用是否已安装
 #[tauri::command]
 pub async fn check_codex_installed() -> Result<serde_json::Value, String> {
@@ -51,12 +150,12 @@ fn find_codex_app() -> Option<String> {
                 return path.lines().next().map(|s| s.to_string());
             }
         }
-        None
+        find_codex_cli()
     }
 
     #[cfg(target_os = "windows")]
     {
-        find_codex_app_windows()
+        find_codex_app_windows().or_else(find_codex_cli)
     }
 
     #[cfg(target_os = "linux")]
@@ -72,11 +171,13 @@ fn find_codex_app() -> Option<String> {
                 return Some(p.to_string());
             }
         }
-        None
+        find_codex_cli()
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    None
+    {
+        find_codex_cli()
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -205,17 +306,21 @@ Start-Process explorer.exe -ArgumentList ('shell:AppsFolder\' + $a.AppId)"#;
     }
 }
 
-/// 安装 Codex 桌面应用（打开下载页面）
+/// 自动安装 Codex（官方 install.sh / install.ps1）
 #[tauri::command]
-pub async fn install_codex_cli(app: AppHandle) -> Result<String, String> {
-    #[cfg(target_os = "windows")]
-    let url = "https://get.microsoft.com/installer/download/9PLM9XGG6VKS";
-    #[cfg(not(target_os = "windows"))]
-    let url = "https://openai.com/index/introducing-codex/";
-    app.opener()
-        .open_url(url, None::<String>)
-        .map_err(|e| format!("打开下载页面失败: {e}"))?;
-    Ok(format!("已打开 Codex 下载页面: {url}"))
+pub async fn install_codex_cli() -> Result<String, String> {
+    if find_codex_app().is_some() {
+        return Ok("Codex 已安装".to_string());
+    }
+    tokio::task::spawn_blocking(|| run_curl_pipe_bash_install(CODEX_INSTALL_SCRIPT, "Codex"))
+        .await
+        .map_err(|e| format!("安装任务失败: {e}"))??;
+    if find_codex_app().is_none() {
+        return Err(
+            "安装脚本已执行，但仍未检测到 Codex，请重启应用或点击「重新检测」".to_string(),
+        );
+    }
+    Ok("Codex 安装完成".to_string())
 }
 
 /// 一键配置并启动 Codex 桌面应用
@@ -239,15 +344,33 @@ pub async fn setup_and_launch_codex(
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
-        let output = Command::new("open")
-            .args(["-a", "Codex"])
-            .output()
-            .map_err(|e| format!("启动 Codex 失败: {e}"))?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("启动 Codex.app 失败: {stderr}"));
+
+        let desktop_candidates = [
+            "/Applications/Codex.app",
+            &format!(
+                "{}/Applications/Codex.app",
+                std::env::var("HOME").unwrap_or_default()
+            ),
+        ];
+        if desktop_candidates
+            .iter()
+            .any(|p| std::path::Path::new(p).exists())
+        {
+            let output = Command::new("open")
+                .args(["-a", "Codex"])
+                .output()
+                .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("启动 Codex.app 失败: {stderr}"));
+            }
+            return Ok("Codex 已启动".to_string());
         }
-        return Ok("Codex 已启动".to_string());
+        if find_codex_cli().is_some() {
+            launch_terminal_running("codex", "codex")?;
+            return Ok("Codex CLI 已启动".to_string());
+        }
+        return Err("未找到 Codex，请先安装".to_string());
     }
 
     #[cfg(target_os = "windows")]
@@ -331,12 +454,151 @@ fn resolve_executable_path(tool: &str) -> Option<String> {
     }
 }
 
+/// 在常见安装目录中查找 CLI，返回 (可执行文件路径, 版本号)
+fn find_cli_in_common_paths(tool: &str) -> Option<(PathBuf, String)> {
+    use std::process::Command;
+
+    let home = dirs::home_dir()?;
+
+    let mut search_paths: Vec<std::path::PathBuf> = Vec::new();
+    if !home.as_os_str().is_empty() {
+        push_unique_path(&mut search_paths, home.join(".local/bin"));
+        push_unique_path(&mut search_paths, home.join(".npm-global/bin"));
+        push_unique_path(&mut search_paths, home.join("n/bin"));
+        push_unique_path(&mut search_paths, home.join(".volta/bin"));
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        push_unique_path(
+            &mut search_paths,
+            std::path::PathBuf::from("/opt/homebrew/bin"),
+        );
+        push_unique_path(
+            &mut search_paths,
+            std::path::PathBuf::from("/usr/local/bin"),
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        push_unique_path(
+            &mut search_paths,
+            std::path::PathBuf::from("/usr/local/bin"),
+        );
+        push_unique_path(&mut search_paths, std::path::PathBuf::from("/usr/bin"));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(appdata) = dirs::data_dir() {
+            push_unique_path(&mut search_paths, appdata.join("npm"));
+        }
+        push_unique_path(
+            &mut search_paths,
+            std::path::PathBuf::from("C:\\Program Files\\nodejs"),
+        );
+    }
+
+    let fnm_base = home.join(".local/state/fnm_multishells");
+    if fnm_base.exists() {
+        if let Ok(entries) = std::fs::read_dir(&fnm_base) {
+            for entry in entries.flatten() {
+                let bin_path = entry.path().join("bin");
+                if bin_path.exists() {
+                    push_unique_path(&mut search_paths, bin_path);
+                }
+            }
+        }
+    }
+
+    let nvm_base = home.join(".nvm/versions/node");
+    if nvm_base.exists() {
+        if let Ok(entries) = std::fs::read_dir(&nvm_base) {
+            for entry in entries.flatten() {
+                let bin_path = entry.path().join("bin");
+                if bin_path.exists() {
+                    push_unique_path(&mut search_paths, bin_path);
+                }
+            }
+        }
+    }
+
+    if tool == "opencode" {
+        let extra_paths = opencode_extra_search_paths(
+            &home,
+            std::env::var_os("OPENCODE_INSTALL_DIR"),
+            std::env::var_os("XDG_BIN_DIR"),
+            std::env::var_os("GOPATH"),
+        );
+        for path in extra_paths {
+            push_unique_path(&mut search_paths, path);
+        }
+    }
+
+    let current_path = std::env::var("PATH").unwrap_or_default();
+
+    for path in &search_paths {
+        #[cfg(target_os = "windows")]
+        let new_path = format!("{};{}", path.display(), current_path);
+
+        #[cfg(not(target_os = "windows"))]
+        let new_path = format!("{}:{}", path.display(), current_path);
+
+        for tool_path in tool_executable_candidates(tool, path) {
+            if !tool_path.exists() {
+                continue;
+            }
+
+            #[cfg(target_os = "windows")]
+            let output = {
+                Command::new("cmd")
+                    .args(["/C", &format!("\"{}\" --version", tool_path.display())])
+                    .env("PATH", &new_path)
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output()
+            };
+
+            #[cfg(not(target_os = "windows"))]
+            let output = {
+                Command::new(&tool_path)
+                    .arg("--version")
+                    .env("PATH", &new_path)
+                    .output()
+            };
+
+            if let Ok(out) = output {
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                if out.status.success() {
+                    let raw = if stdout.is_empty() { &stderr } else { &stdout };
+                    if !raw.is_empty() {
+                        return Some((tool_path, extract_version(raw)));
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 fn find_claude_cli() -> Option<String> {
+    if let Some((path, _)) = find_cli_in_common_paths("claude") {
+        return Some(path.to_string_lossy().into_owned());
+    }
     if try_get_version("claude").0.is_some() {
         return resolve_executable_path("claude");
     }
-    if scan_cli_version("claude").0.is_some() {
-        return resolve_executable_path("claude");
+    None
+}
+
+fn find_codex_cli() -> Option<String> {
+    if let Some((path, _)) = find_cli_in_common_paths("codex") {
+        return Some(path.to_string_lossy().into_owned());
+    }
+    if try_get_version("codex").0.is_some() {
+        return resolve_executable_path("codex");
     }
     None
 }
@@ -407,14 +669,23 @@ pub async fn check_claude_installed() -> Result<serde_json::Value, String> {
     }
 }
 
-/// 打开 Claude Code 安装说明
+/// 自动安装 Claude Code（官方 install.sh / install.ps1）
 #[tauri::command]
-pub async fn install_claude_cli(app: AppHandle) -> Result<String, String> {
-    let url = "https://docs.anthropic.com/en/docs/claude-code/setup";
-    app.opener()
-        .open_url(url, None::<String>)
-        .map_err(|e| format!("打开安装页面失败: {e}"))?;
-    Ok(format!("已打开 Claude Code 安装页面: {url}"))
+pub async fn install_claude_cli() -> Result<String, String> {
+    if find_claude_cli().is_some() {
+        return Ok("Claude Code 已安装".to_string());
+    }
+    tokio::task::spawn_blocking(|| {
+        run_curl_pipe_bash_install(CLAUDE_INSTALL_SCRIPT, "Claude Code")
+    })
+    .await
+    .map_err(|e| format!("安装任务失败: {e}"))??;
+    if find_claude_cli().is_none() {
+        return Err(
+            "安装脚本已执行，但仍未检测到 Claude Code，请重启应用或点击「重新检测」".to_string(),
+        );
+    }
+    Ok("Claude Code 安装完成".to_string())
 }
 
 /// 一键配置并启动 Claude Code（写入 ~/.claude/settings.json + 打开终端）
@@ -1006,132 +1277,9 @@ fn tool_executable_candidates(tool: &str, dir: &Path) -> Vec<std::path::PathBuf>
 
 /// 扫描常见路径查找 CLI
 fn scan_cli_version(tool: &str) -> (Option<String>, Option<String>) {
-    use std::process::Command;
-
-    let home = dirs::home_dir().unwrap_or_default();
-
-    // 常见的安装路径（原生安装优先）
-    let mut search_paths: Vec<std::path::PathBuf> = Vec::new();
-    if !home.as_os_str().is_empty() {
-        push_unique_path(&mut search_paths, home.join(".local/bin"));
-        push_unique_path(&mut search_paths, home.join(".npm-global/bin"));
-        push_unique_path(&mut search_paths, home.join("n/bin"));
-        push_unique_path(&mut search_paths, home.join(".volta/bin"));
+    if let Some((_, version)) = find_cli_in_common_paths(tool) {
+        return (Some(version), None);
     }
-
-    #[cfg(target_os = "macos")]
-    {
-        push_unique_path(
-            &mut search_paths,
-            std::path::PathBuf::from("/opt/homebrew/bin"),
-        );
-        push_unique_path(
-            &mut search_paths,
-            std::path::PathBuf::from("/usr/local/bin"),
-        );
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        push_unique_path(
-            &mut search_paths,
-            std::path::PathBuf::from("/usr/local/bin"),
-        );
-        push_unique_path(&mut search_paths, std::path::PathBuf::from("/usr/bin"));
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        if let Some(appdata) = dirs::data_dir() {
-            push_unique_path(&mut search_paths, appdata.join("npm"));
-        }
-        push_unique_path(
-            &mut search_paths,
-            std::path::PathBuf::from("C:\\Program Files\\nodejs"),
-        );
-    }
-
-    let fnm_base = home.join(".local/state/fnm_multishells");
-    if fnm_base.exists() {
-        if let Ok(entries) = std::fs::read_dir(&fnm_base) {
-            for entry in entries.flatten() {
-                let bin_path = entry.path().join("bin");
-                if bin_path.exists() {
-                    push_unique_path(&mut search_paths, bin_path);
-                }
-            }
-        }
-    }
-
-    let nvm_base = home.join(".nvm/versions/node");
-    if nvm_base.exists() {
-        if let Ok(entries) = std::fs::read_dir(&nvm_base) {
-            for entry in entries.flatten() {
-                let bin_path = entry.path().join("bin");
-                if bin_path.exists() {
-                    push_unique_path(&mut search_paths, bin_path);
-                }
-            }
-        }
-    }
-
-    if tool == "opencode" {
-        let extra_paths = opencode_extra_search_paths(
-            &home,
-            std::env::var_os("OPENCODE_INSTALL_DIR"),
-            std::env::var_os("XDG_BIN_DIR"),
-            std::env::var_os("GOPATH"),
-        );
-
-        for path in extra_paths {
-            push_unique_path(&mut search_paths, path);
-        }
-    }
-
-    let current_path = std::env::var("PATH").unwrap_or_default();
-
-    for path in &search_paths {
-        #[cfg(target_os = "windows")]
-        let new_path = format!("{};{}", path.display(), current_path);
-
-        #[cfg(not(target_os = "windows"))]
-        let new_path = format!("{}:{}", path.display(), current_path);
-
-        for tool_path in tool_executable_candidates(tool, path) {
-            if !tool_path.exists() {
-                continue;
-            }
-
-            #[cfg(target_os = "windows")]
-            let output = {
-                Command::new("cmd")
-                    .args(["/C", &format!("\"{}\" --version", tool_path.display())])
-                    .env("PATH", &new_path)
-                    .creation_flags(CREATE_NO_WINDOW)
-                    .output()
-            };
-
-            #[cfg(not(target_os = "windows"))]
-            let output = {
-                Command::new(&tool_path)
-                    .arg("--version")
-                    .env("PATH", &new_path)
-                    .output()
-            };
-
-            if let Ok(out) = output {
-                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                if out.status.success() {
-                    let raw = if stdout.is_empty() { &stderr } else { &stdout };
-                    if !raw.is_empty() {
-                        return (Some(extract_version(raw)), None);
-                    }
-                }
-            }
-        }
-    }
-
     (None, Some("not installed or not executable".to_string()))
 }
 
