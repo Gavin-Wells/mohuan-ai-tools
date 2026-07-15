@@ -8,13 +8,23 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { generateThirdPartyConfig } from "@/config/codexProviderPresets";
-import { MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
+import { generateThirdPartyConfig, MOHUAN_CODEX_PROVIDER } from "@/config/codexProviderPresets";
+import { MOHUAN_DEFAULT_CODEX_MODEL, MOHUAN_GATEWAY_V1 } from "@/config/mohuanGateway";
+import { resolveMohuanCodexModel } from "@/utils/mohuanCodexModel";
+import { buildMohuanCodexCatalog } from "@/utils/mohuanCodexCatalog";
+import { fetchModelsForConfig } from "@/lib/api/model-fetch";
 
-const CODEX_DEFAULT_MODEL = "gpt-5.5";
+const CODEX_FALLBACK_MODEL = MOHUAN_DEFAULT_CODEX_MODEL;
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
 type InstallStatus = "checking" | "installed" | "not_installed" | "installing";
+type CodexRuntimeKind = "chatgpt" | "codex" | "cli" | null;
+
+interface InstallResult {
+  installed: boolean;
+  path: string | null;
+  runtime?: CodexRuntimeKind;
+}
 
 interface Billing {
   balance: number;
@@ -35,24 +45,35 @@ function readSavedKey(): string {
   try { return localStorage.getItem("codex_api_key") ?? ""; } catch { return ""; }
 }
 
+function runtimeLabel(kind: CodexRuntimeKind): string {
+  if (kind === "chatgpt") return "ChatGPT 桌面端（Codex 模式）";
+  if (kind === "codex") return "Codex 桌面端";
+  if (kind === "cli") return "Codex CLI";
+  return "ChatGPT / Codex";
+}
+
 export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onProvidersChanged }: CodexSetupPageProps) {
   const [apiKey, setApiKey] = useState(readSavedKey);
   const [status, setStatus] = useState<Status>(() => readSavedKey() ? "done" : "idle");
-  const [statusMsg, setStatusMsg] = useState(() => readSavedKey() ? "已配置，可直接启动 Codex" : "");
+  const [statusMsg, setStatusMsg] = useState(() => readSavedKey() ? "已配置，可直接启动 ChatGPT（Codex 模式）" : "");
   const [showKey, setShowKey] = useState(false);
   const [billing, setBilling] = useState<Billing | null>(null);
 
   const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
   const [codexPath, setCodexPath] = useState<string | null>(null);
+  const [runtimeKind, setRuntimeKind] = useState<CodexRuntimeKind>(null);
+  const [resolvedModel, setResolvedModel] = useState(CODEX_FALLBACK_MODEL);
   const autoInstallStarted = useRef(false);
 
   const applyInstallResult = useCallback(
-    (result: { installed: boolean; path: string | null }) => {
+    (result: InstallResult) => {
       if (result.installed) {
         setInstallStatus("installed");
         setCodexPath(result.path);
+        setRuntimeKind(result.runtime ?? null);
       } else {
         setInstallStatus("not_installed");
+        setRuntimeKind(null);
       }
     },
     [],
@@ -61,11 +82,12 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
   const checkInstall = useCallback(async () => {
     setInstallStatus("checking");
     try {
-      const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
+      const result = await invoke<InstallResult>("check_codex_installed");
       applyInstallResult(result);
       return result;
     } catch {
       setInstallStatus("not_installed");
+      setRuntimeKind(null);
       return { installed: false, path: null };
     }
   }, [applyInstallResult]);
@@ -74,14 +96,15 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     setInstallStatus("installing");
     try {
       const msg = await invoke<string>("install_codex_cli");
-      toast.success(msg || "Codex 安装完成");
-      const result = await invoke<{ installed: boolean; path: string | null }>("check_codex_installed");
+      toast.success(msg || "ChatGPT / Codex 安装完成");
+      const result = await invoke<InstallResult>("check_codex_installed");
       applyInstallResult(result);
       if (!result.installed) {
         toast.message("安装脚本已执行，若仍未检测到请稍候后点击「重新检测」");
       }
     } catch (err) {
       setInstallStatus("not_installed");
+      setRuntimeKind(null);
       toast.error(err instanceof Error ? err.message : String(err));
     }
   }, [applyInstallResult]);
@@ -107,10 +130,18 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     } catch { /* silent */ }
   }, []);
 
+  const refreshResolvedModel = useCallback(async (key: string) => {
+    const model = await resolveMohuanCodexModel(key);
+    setResolvedModel(model);
+    return model;
+  }, []);
+
   useEffect(() => {
     const k = readSavedKey();
-    if (k) fetchBilling(k);
-  }, [fetchBilling]);
+    if (!k) return;
+    void fetchBilling(k);
+    void refreshResolvedModel(k);
+  }, [fetchBilling, refreshResolvedModel]);
 
   const handleVerify = useCallback(async () => {
     const k = apiKey.trim();
@@ -120,8 +151,9 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
       const res = await fetch(`${MOHUAN_GATEWAY_V1}/me`, { headers: { Authorization: `Bearer ${k}` } });
       if (res.ok) {
         const d = await res.json(); setBilling(d.billing);
-        setStatus("valid"); setStatusMsg("Key 验证通过");
-        toast.success("API Key 有效");
+        const model = await refreshResolvedModel(k);
+        setStatus("valid"); setStatusMsg(`Key 验证通过，将使用模型 ${model}`);
+        toast.success(`API Key 有效，模型: ${model}`);
       } else {
         setStatus("invalid"); setStatusMsg(`Key 无效（${res.status}）`);
         toast.error(`验证失败: HTTP ${res.status}`);
@@ -130,26 +162,36 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
       setStatus("invalid"); setStatusMsg("网络错误，请检查连接");
       toast.error("网络连接失败");
     }
-  }, [apiKey]);
+  }, [apiKey, refreshResolvedModel]);
 
   const handleLaunch = useCallback(async () => {
     const k = apiKey.trim();
     if (!k) { toast.error("请先输入 API Key"); return; }
-    setStatus("writing"); setStatusMsg("正在配置并启动 Codex...");
+    setStatus("writing"); setStatusMsg("正在获取最新 GPT 模型并启动 ChatGPT（Codex 模式）...");
     try {
-      const configToml = generateThirdPartyConfig("openai_custom", MOHUAN_GATEWAY_V1, CODEX_DEFAULT_MODEL);
-      const msg: string = await invoke("setup_and_launch_codex", { apiKey: k, configToml });
+      const model = await refreshResolvedModel(k);
+      let catalogJson: string | null = null;
+      try {
+        const models = await fetchModelsForConfig(MOHUAN_GATEWAY_V1, k);
+        catalogJson = JSON.stringify(
+          buildMohuanCodexCatalog(models.map((item) => item.id)),
+        );
+      } catch {
+        catalogJson = JSON.stringify(buildMohuanCodexCatalog([model]));
+      }
+      const configToml = generateThirdPartyConfig(MOHUAN_CODEX_PROVIDER, MOHUAN_GATEWAY_V1, model);
+      const msg: string = await invoke("setup_and_launch_codex", { apiKey: k, configToml, catalogJson });
       localStorage.setItem("codex_api_key", k);
       fetchBilling(k);
-      setStatus("done"); setStatusMsg(msg);
-      toast.success("Codex 已启动");
+      setStatus("done"); setStatusMsg(`${msg}（模型: ${model}）`);
+      toast.success(runtimeKind === "chatgpt" ? `ChatGPT 已启动 · ${model}` : `Codex 已启动 · ${model}`);
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       setStatus("invalid");
       setStatusMsg(`启动失败: ${errMsg}`);
       toast.error(errMsg);
     }
-  }, [apiKey, fetchBilling]);
+  }, [apiKey, fetchBilling, refreshResolvedModel, runtimeKind]);
 
   const handleRestore = useCallback(async () => {
     setStatus("writing"); setStatusMsg("正在还原...");
@@ -172,35 +214,38 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
     <div className="px-6 flex flex-col flex-1 min-h-0">
       <div className="max-w-md mx-auto w-full flex flex-col justify-center flex-1 gap-4 py-4">
         <div className="text-center space-y-1">
-          <h1 className="text-xl font-bold text-foreground">Codex 快速配置</h1>
+          <h1 className="text-xl font-bold text-foreground">ChatGPT / Codex 快速配置</h1>
           <p className="text-xs text-muted-foreground">
-            输入 API Key，一键配置并启动 Codex（默认模型: <code className="px-1 py-0.5 rounded bg-muted text-[11px]">{CODEX_DEFAULT_MODEL}</code>）
+            输入 API Key，一键配置并启动 ChatGPT 桌面端（Codex 模式）；启动前自动从网关选取最新 GPT 文本模型（当前: <code className="px-1 py-0.5 rounded bg-muted text-[11px]">{resolvedModel}</code>，离线回退: {CODEX_FALLBACK_MODEL}）
+          </p>
+          <p className="text-[11px] text-muted-foreground/80 text-center">
+            验证实际模型：控制台或 <code className="px-1 py-0.5 rounded bg-muted">GET /v1/me</code> 的 recent_requests；切换时看 Codex 提示「模型已从 … 更改为 …」。
           </p>
         </div>
 
         {installStatus === "checking" && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在检测 Codex...
+            正在检测 ChatGPT / Codex...
           </div>
         )}
         {installStatus === "installing" && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-muted/50 text-xs text-muted-foreground">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            正在自动安装 Codex...
+            正在自动安装 ChatGPT / Codex...
           </div>
         )}
         {installStatus === "installed" && (
           <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-green-50 dark:bg-green-950/30 text-xs text-green-700 dark:text-green-400">
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
-            <span>Codex 已安装{codexPath ? `: ${codexPath}` : ""}</span>
+            <span>{runtimeLabel(runtimeKind)} 已安装{codexPath ? `: ${codexPath}` : ""}</span>
           </div>
         )}
         {installStatus === "not_installed" && (
           <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 space-y-2">
             <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-400">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              <span>未检测到 Codex，可重试自动安装</span>
+              <span>未检测到 ChatGPT / Codex，可重试自动安装</span>
             </div>
             <div className="flex gap-2">
               <Button
@@ -254,7 +299,7 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
           <Button
             onClick={handleLaunch}
             disabled={isLoading || !apiKey.trim() || !codexReady}
-            title={!codexReady ? "请先安装 Codex" : ""}
+            title={!codexReady ? "请先安装 ChatGPT 或 Codex" : ""}
             className="h-10 text-xs font-semibold bg-gradient-to-r from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white shadow-sm"
           >
             {status === "writing" ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Rocket className="mr-1.5 h-3.5 w-3.5" />}

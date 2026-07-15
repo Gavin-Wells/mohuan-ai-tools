@@ -117,45 +117,105 @@ fn run_curl_pipe_bash_install(script_url: &str, tool_label: &str) -> Result<(), 
     }
 }
 
-/// 检测 Codex 桌面应用是否已安装
-#[tauri::command]
-pub async fn check_codex_installed() -> Result<serde_json::Value, String> {
-    let path = find_codex_app();
-    if let Some(p) = path {
-        Ok(serde_json::json!({ "installed": true, "path": p }))
-    } else {
-        Ok(serde_json::json!({ "installed": false, "path": null }))
-    }
+#[derive(Clone)]
+struct CodexRuntime {
+    path: String,
+    kind: &'static str,
 }
 
-/// 查找 Codex 桌面应用路径
-fn find_codex_app() -> Option<String> {
+fn detect_codex_runtime() -> Option<CodexRuntime> {
+    if let Some(path) = find_chatgpt_desktop() {
+        return Some(CodexRuntime {
+            path,
+            kind: "chatgpt",
+        });
+    }
+    if let Some(path) = find_codex_legacy_desktop() {
+        return Some(CodexRuntime {
+            path,
+            kind: "codex",
+        });
+    }
+    find_codex_cli().map(|path| CodexRuntime { path, kind: "cli" })
+}
+
+#[cfg(target_os = "macos")]
+fn find_macos_app(name: &str, exclude_substrings: &[&str]) -> Option<String> {
+    use std::path::Path;
+    use std::process::Command;
+
+    let home = std::env::var("HOME").unwrap_or_default();
+    for p in [
+        format!("/Applications/{name}"),
+        format!("{home}/Applications/{name}"),
+    ] {
+        if Path::new(&p).exists() && !exclude_substrings.iter().any(|s| p.contains(s)) {
+            return Some(p);
+        }
+    }
+
+    if let Ok(out) = Command::new("mdfind")
+        .args([format!("kMDItemFSName == '{name}'")])
+        .output()
+    {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let line = line.trim();
+            if line.is_empty() || !line.ends_with(name) {
+                continue;
+            }
+            if exclude_substrings.iter().any(|s| line.contains(s)) {
+                continue;
+            }
+            if Path::new(line).exists() {
+                return Some(line.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(not(target_os = "macos"))]
+fn find_macos_app(_name: &str, _exclude_substrings: &[&str]) -> Option<String> {
+    None
+}
+
+fn find_chatgpt_desktop() -> Option<String> {
     #[cfg(target_os = "macos")]
     {
-        let candidates = [
-            "/Applications/Codex.app",
-            &format!("{}/Applications/Codex.app", std::env::var("HOME").unwrap_or_default()),
-        ];
-        for p in &candidates {
-            if std::path::Path::new(p).exists() {
-                return Some(p.to_string());
-            }
-        }
-        if let Ok(out) = std::process::Command::new("mdfind")
-            .args(["kMDItemFSName == 'Codex.app'"])
-            .output()
-        {
-            let path = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path.lines().next().map(|s| s.to_string());
-            }
-        }
-        find_codex_cli()
+        return find_macos_app("ChatGPT.app", &["ChatGPT Classic"]);
     }
 
     #[cfg(target_os = "windows")]
     {
-        find_codex_app_windows().or_else(find_codex_cli)
+        if let Some(path) = find_chatgpt_exe_on_windows() {
+            return Some(path.display().to_string());
+        }
+        if chatgpt_registered_in_start_apps() {
+            return Some("Microsoft Store (ChatGPT)".to_string());
+        }
+        return None;
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    None
+}
+
+fn find_codex_legacy_desktop() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        return find_macos_app("Codex.app", &[]);
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(path) = find_codex_exe_on_windows() {
+            return Some(path.display().to_string());
+        }
+        if codex_registered_in_start_apps() {
+            return Some("Microsoft Store (Codex)".to_string());
+        }
+        return None;
     }
 
     #[cfg(target_os = "linux")]
@@ -171,31 +231,139 @@ fn find_codex_app() -> Option<String> {
                 return Some(p.to_string());
             }
         }
-        find_codex_cli()
+        return None;
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        find_codex_cli()
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn find_codex_app_windows() -> Option<String> {
-    if let Some(path) = find_codex_exe_on_windows() {
-        return Some(path.display().to_string());
-    }
-    if codex_registered_in_start_apps() {
-        return Some("Microsoft Store (Codex)".to_string());
-    }
     None
 }
 
-/// Locate Codex.exe: static paths, Microsoft Store package dir, then PATH.
-#[cfg(target_os = "windows")]
-fn find_codex_exe_on_windows() -> Option<PathBuf> {
+fn launch_codex_runtime(runtime: &CodexRuntime) -> Result<String, String> {
+    match runtime.kind {
+        "chatgpt" => launch_chatgpt_desktop(),
+        "codex" => launch_codex_desktop_only(),
+        "cli" => launch_codex_cli_runtime(),
+        _ => Err("未知的 Codex 运行环境".to_string()),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn launch_chatgpt_desktop() -> Result<String, String> {
     use std::process::Command;
 
+    if find_chatgpt_desktop().is_some() {
+        let output = Command::new("open")
+            .args(["-a", "ChatGPT"])
+            .output()
+            .map_err(|e| format!("启动 ChatGPT 失败: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("启动 ChatGPT.app 失败: {stderr}"));
+        }
+        return Ok("ChatGPT 已启动（Codex 模式）".to_string());
+    }
+
+    Err("未找到 ChatGPT 桌面端，请先安装".to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn launch_chatgpt_desktop() -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        launch_chatgpt_desktop_windows()?;
+        return Ok("ChatGPT 已启动（Codex 模式）".to_string());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("当前平台不支持 ChatGPT 桌面端".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn launch_codex_desktop_only() -> Result<String, String> {
+    use std::process::Command;
+
+    if find_codex_legacy_desktop().is_some() {
+        let output = Command::new("open")
+            .args(["-a", "Codex"])
+            .output()
+            .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("启动 Codex.app 失败: {stderr}"));
+        }
+        return Ok("Codex 已启动".to_string());
+    }
+
+    Err("未找到 Codex 桌面端，请先安装".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn launch_codex_desktop_only() -> Result<String, String> {
+    launch_codex_desktop().map_err(|e| format!("启动 Codex 失败: {e}"))?;
+    Ok("Codex 已启动".to_string())
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn launch_codex_desktop_only() -> Result<String, String> {
+    use std::process::Command;
+
+    if let Some(bin_path) = find_codex_legacy_desktop() {
+        Command::new(&bin_path)
+            .spawn()
+            .map_err(|e| format!("启动 Codex 失败: {e}"))?;
+        return Ok("Codex 已启动".to_string());
+    }
+
+    Err("未找到 Codex 应用，请先安装".to_string())
+}
+
+fn launch_codex_cli_runtime() -> Result<String, String> {
+    use std::process::Command;
+
+    if let Some(bin) = resolve_executable_path("codex") {
+        if Command::new(&bin)
+            .arg("app")
+            .spawn()
+            .map(|_| ())
+            .is_ok()
+        {
+            return Ok("Codex 已启动".to_string());
+        }
+    }
+
+    launch_terminal_running("codex app", "codex")?;
+    Ok("Codex CLI 已启动".to_string())
+}
+
+/// 检测 ChatGPT / Codex 是否已安装
+#[tauri::command]
+pub async fn check_codex_installed() -> Result<serde_json::Value, String> {
+    if let Some(runtime) = detect_codex_runtime() {
+        Ok(serde_json::json!({
+            "installed": true,
+            "path": runtime.path,
+            "runtime": runtime.kind,
+        }))
+    } else {
+        Ok(serde_json::json!({
+            "installed": false,
+            "path": null,
+            "runtime": null,
+        }))
+    }
+}
+
+/// 查找已安装的 ChatGPT / Codex 运行环境路径
+#[allow(dead_code)]
+fn find_codex_app() -> Option<String> {
+    detect_codex_runtime().map(|runtime| runtime.path)
+}
+
+/// Locate legacy Codex.exe: static paths and Microsoft Store package dir.
+#[cfg(target_os = "windows")]
+fn find_codex_exe_on_windows() -> Option<PathBuf> {
     let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
     let static_candidates = [
         format!("{local}\\Programs\\Codex\\Codex.exe"),
@@ -209,25 +377,7 @@ fn find_codex_exe_on_windows() -> Option<PathBuf> {
         }
     }
 
-    if let Some(path) = find_codex_in_windows_apps() {
-        return Some(path);
-    }
-
-    let output = Command::new("where")
-        .arg("codex")
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let first = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .find(|line| !line.trim().is_empty())?
-        .trim()
-        .to_string();
-    let path = PathBuf::from(first);
-    path.is_file().then_some(path)
+    find_codex_in_windows_apps()
 }
 
 /// Microsoft Store installs live under `WindowsApps\OpenAI.Codex_*`.
@@ -265,6 +415,97 @@ fn codex_registered_in_start_apps() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn chatgpt_registered_in_start_apps() -> bool {
+    use std::process::Command;
+
+    let script = r#"$a = Get-StartApps | Where-Object { $_.Name -eq 'ChatGPT' } | Select-Object -First 1; if ($a) { exit 0 } else { exit 1 }"#;
+    Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// Microsoft Store installs live under `WindowsApps\OpenAI.ChatGPT*`.
+#[cfg(target_os = "windows")]
+fn find_chatgpt_in_windows_apps() -> Option<PathBuf> {
+    let base = Path::new(r"C:\Program Files\WindowsApps");
+    let entries = std::fs::read_dir(base).ok()?;
+    let mut matches = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if !name.starts_with("OpenAI.ChatGPT") {
+            continue;
+        }
+        for exe_name in ["ChatGPT.exe", "chatgpt.exe"] {
+            let exe = entry.path().join("app").join(exe_name);
+            if exe.is_file() {
+                matches.push(exe);
+                break;
+            }
+        }
+    }
+    matches.sort();
+    matches.pop()
+}
+
+#[cfg(target_os = "windows")]
+fn find_chatgpt_exe_on_windows() -> Option<PathBuf> {
+    let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
+    let static_candidates = [
+        format!("{local}\\Programs\\ChatGPT\\ChatGPT.exe"),
+        format!("{local}\\Programs\\OpenAI\\ChatGPT\\ChatGPT.exe"),
+    ];
+    for p in &static_candidates {
+        let path = PathBuf::from(p);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+
+    find_chatgpt_in_windows_apps()
+}
+
+#[cfg(target_os = "windows")]
+fn launch_chatgpt_via_start_apps() -> Result<(), String> {
+    use std::process::Command;
+
+    let script = r#"$a = Get-StartApps | Where-Object { $_.Name -eq 'ChatGPT' } | Select-Object -First 1
+if (-not $a) { exit 1 }
+Start-Process explorer.exe -ArgumentList ('shell:AppsFolder\' + $a.AppId)"#;
+    let output = Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", script])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("启动 ChatGPT 失败: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("通过开始菜单启动 ChatGPT 失败: {stderr}"))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn launch_chatgpt_desktop_windows() -> Result<(), String> {
+    if launch_chatgpt_via_start_apps().is_ok() {
+        return Ok(());
+    }
+    if run_windows_start_command(&["", "ChatGPT"], "ChatGPT Start Menu").is_ok() {
+        return Ok(());
+    }
+    if run_windows_start_command(&["", "chatgpt:"], "ChatGPT protocol").is_ok() {
+        return Ok(());
+    }
+    if let Some(exe) = find_chatgpt_exe_on_windows() {
+        let path = exe.to_string_lossy().to_string();
+        return run_windows_start_command(&["", &path], "ChatGPT");
+    }
+    Err("未找到 ChatGPT 应用，请从 Microsoft Store 安装".to_string())
 }
 
 /// Launch the Codex desktop app without spawning Store-packaged binaries directly.
@@ -306,93 +547,59 @@ Start-Process explorer.exe -ArgumentList ('shell:AppsFolder\' + $a.AppId)"#;
     }
 }
 
-/// 自动安装 Codex（官方 install.sh / install.ps1）
+/// 自动安装 ChatGPT / Codex 桌面端（官方 install.sh / install.ps1）
 #[tauri::command]
 pub async fn install_codex_cli() -> Result<String, String> {
-    if find_codex_app().is_some() {
-        return Ok("Codex 已安装".to_string());
+    if let Some(runtime) = detect_codex_runtime() {
+        let label = match runtime.kind {
+            "chatgpt" => "ChatGPT 桌面端已安装",
+            "codex" => "Codex 桌面端已安装",
+            _ => "Codex CLI 已安装",
+        };
+        return Ok(label.to_string());
     }
-    tokio::task::spawn_blocking(|| run_curl_pipe_bash_install(CODEX_INSTALL_SCRIPT, "Codex"))
-        .await
-        .map_err(|e| format!("安装任务失败: {e}"))??;
-    if find_codex_app().is_none() {
+    tokio::task::spawn_blocking(|| {
+        run_curl_pipe_bash_install(CODEX_INSTALL_SCRIPT, "ChatGPT / Codex")
+    })
+    .await
+    .map_err(|e| format!("安装任务失败: {e}"))??;
+    if detect_codex_runtime().is_none() {
         return Err(
-            "安装脚本已执行，但仍未检测到 Codex，请重启应用或点击「重新检测」".to_string(),
+            "安装脚本已执行，但仍未检测到 ChatGPT / Codex，请重启应用或点击「重新检测」".to_string(),
         );
     }
-    Ok("Codex 安装完成".to_string())
+    Ok("ChatGPT / Codex 安装完成".to_string())
 }
 
-/// 一键配置并启动 Codex 桌面应用
-/// 写 ~/.codex/auth.json + config.toml → 打开 Codex.app
+/// 一键配置并启动 ChatGPT（Codex 模式）或旧版 Codex
 #[tauri::command]
 pub async fn setup_and_launch_codex(
     #[allow(non_snake_case)] apiKey: String,
     #[allow(non_snake_case)] configToml: String,
+    #[allow(non_snake_case)] catalogJson: Option<String>,
 ) -> Result<String, String> {
     let api_key = apiKey.trim().to_string();
     if api_key.is_empty() {
         return Err("API Key 不能为空".to_string());
     }
 
-    // 1) Write ~/.codex/auth.json + config.toml
+    if let Some(catalog) = catalogJson {
+        let catalog = catalog.trim();
+        if !catalog.is_empty() {
+            let catalog_path = crate::codex_config::get_codex_config_dir()
+                .join("mohuan-model-catalog.json");
+            std::fs::write(&catalog_path, catalog)
+                .map_err(|e| format!("写入模型目录失败: {e}"))?;
+        }
+    }
+
     let auth_value = serde_json::json!({ "OPENAI_API_KEY": api_key });
     crate::codex_config::write_codex_live_atomic(&auth_value, Some(&configToml))
         .map_err(|e| format!("写入 Codex 配置失败: {e}"))?;
 
-    // 2) Launch Codex desktop app
-    #[cfg(target_os = "macos")]
-    {
-        use std::process::Command;
-
-        let desktop_candidates = [
-            "/Applications/Codex.app",
-            &format!(
-                "{}/Applications/Codex.app",
-                std::env::var("HOME").unwrap_or_default()
-            ),
-        ];
-        if desktop_candidates
-            .iter()
-            .any(|p| std::path::Path::new(p).exists())
-        {
-            let output = Command::new("open")
-                .args(["-a", "Codex"])
-                .output()
-                .map_err(|e| format!("启动 Codex 失败: {e}"))?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("启动 Codex.app 失败: {stderr}"));
-            }
-            return Ok("Codex 已启动".to_string());
-        }
-        if find_codex_cli().is_some() {
-            launch_terminal_running("codex", "codex")?;
-            return Ok("Codex CLI 已启动".to_string());
-        }
-        return Err("未找到 Codex，请先安装".to_string());
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        launch_codex_desktop().map_err(|e| format!("启动 Codex 失败: {e}"))?;
-        return Ok("Codex 已启动".to_string());
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        use std::process::Command;
-        if let Some(bin_path) = find_codex_app() {
-            Command::new(&bin_path)
-                .spawn()
-                .map_err(|e| format!("启动 Codex 失败: {e}"))?;
-            return Ok("Codex 已启动".to_string());
-        }
-        return Err("未找到 Codex 应用，请先安装".to_string());
-    }
-
-    #[allow(unreachable_code)]
-    Err("不支持的操作系统".to_string())
+    let runtime = detect_codex_runtime()
+        .ok_or_else(|| "未找到 ChatGPT / Codex，请先安装".to_string())?;
+    launch_codex_runtime(&runtime)
 }
 
 /// 还原 Codex 为官方默认配置（删除 ~/.codex/auth.json 和 config.toml）

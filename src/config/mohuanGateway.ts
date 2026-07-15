@@ -16,8 +16,8 @@ export const MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-4-6";
 export const MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL = "claude-opus-4-8";
 export const MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL = "claude-haiku-4-5-20251001";
 
-/** Codex 默认模型 */
-export const MOHUAN_DEFAULT_CODEX_MODEL = "gpt-5.5";
+/** Codex 离线回退默认（网关 /v1/models 不可用时使用） */
+export const MOHUAN_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
 
 /** Gemini 默认模型 */
 export const MOHUAN_DEFAULT_GEMINI_MODEL = "gemini-3.1-pro-preview";
