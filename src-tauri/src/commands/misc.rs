@@ -814,7 +814,7 @@ fn merge_claude_settings_env(
     use crate::services::provider::sanitize_claude_settings_for_live;
 
     let mut settings: serde_json::Value = if path.exists() {
-        read_json_file(&path).map_err(|e| e.to_string())?
+        read_json_file(path).map_err(|e| e.to_string())?
     } else {
         serde_json::json!({})
     };
@@ -860,8 +860,8 @@ fn merge_claude_settings_env(
     }
 
     let sanitized = sanitize_claude_settings_for_live(&settings);
-    write_json_file(&path, &sanitized).map_err(|e| e.to_string())?;
-    restrict_claude_config_permissions(&path)
+    write_json_file(path, &sanitized).map_err(|e| e.to_string())?;
+    restrict_claude_config_permissions(path)
 }
 
 fn restrict_claude_config_permissions(path: &Path) -> Result<(), String> {
@@ -883,7 +883,7 @@ fn restore_claude_mohuan_env(path: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    let mut settings: serde_json::Value = read_json_file(&path).map_err(|e| e.to_string())?;
+    let mut settings: serde_json::Value = read_json_file(path).map_err(|e| e.to_string())?;
     let backup_path = path.with_file_name("mohuan-env-backup.json");
     let backup: serde_json::Value = if backup_path.exists() {
         read_json_file(&backup_path).map_err(|e| e.to_string())?
@@ -923,8 +923,8 @@ fn restore_claude_mohuan_env(path: &Path) -> Result<(), String> {
         }
     }
 
-    write_json_file(&path, &settings).map_err(|e| e.to_string())?;
-    restrict_claude_config_permissions(&path)?;
+    write_json_file(path, &settings).map_err(|e| e.to_string())?;
+    restrict_claude_config_permissions(path)?;
     if backup_path.exists() {
         std::fs::remove_file(&backup_path).map_err(|e| format!("删除配置备份失败: {e}"))?;
     }
