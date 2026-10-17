@@ -79,14 +79,19 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Test update flow
+        run: |
+          pnpm exec vitest run tests/components/UpdateContext.test.tsx tests/utils/updater.test.ts tests/utils/desktopUpdatePolicy.test.ts tests/components/ClaudeSetupPage.test.tsx tests/utils/mohuanClaudeModel.test.ts
+          node --test scripts/generate-updater-manifest.test.mjs
+
       - name: Prepare Tauri signing key
         shell: bash
         run: |
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "⚠️ TAURI_SIGNING_PRIVATE_KEY not set, updater signatures will be skipped"
-            exit 0
+          if [ -z "${{ secrets.MODELSWITCH_UPDATER_PRIVATE_KEY }}" ]; then
+            echo "Updater signing key is required" >&2
+            exit 1
           fi
-          RAW="${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}"
+          RAW="${{ secrets.MODELSWITCH_UPDATER_PRIVATE_KEY }}"
           KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
           if echo "$RAW" | head -n1 | grep -q '^untrusted comment:'; then
             printf '%s\n' "$RAW" > "$KEY_PATH"
@@ -99,8 +104,8 @@ jobs:
                 ONE=$(printf '%s' "$RAW" | tr -d '\r\n')
                 printf '%s\n%s\n' "untrusted comment: tauri signing key" "$ONE" > "$KEY_PATH"
               else
-                echo "⚠️ TAURI_SIGNING_PRIVATE_KEY format unrecognized, skipping"
-                exit 0
+                echo "Updater signing key format unrecognized" >&2
+                exit 1
               fi
             fi
           fi
@@ -112,9 +117,7 @@ jobs:
             KEY_B64=$(KEY_PATH="$KEY_PATH" node -e "process.stdout.write(require('fs').readFileSync(process.env.KEY_PATH).toString('base64'))")
           fi
           echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_B64" >> "$GITHUB_ENV"
-          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}" >> $GITHUB_ENV
-          fi
+          echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=" >> "$GITHUB_ENV"
           echo "✅ Tauri signing key prepared"
 
       - name: Check Apple certificate availability
@@ -403,6 +406,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ModelSwitch Tools ${{ github.ref_name }}
           prerelease: false
+          draft: true
           body: |
             ## ModelSwitch Tools ${{ github.ref_name }}
 
@@ -412,6 +416,8 @@ jobs:
             - Claude 后台任务使用 Sonnet 5.5，不再配置旧版 Claude 或 Haiku 模型。
             - 保留既有 Claude 设置，备份并支持还原网关环境变量。
             - 修复桌面启动时的 CLI 路径与客户端更新检查。
+            - 安装版支持点击更新后下载签名更新包、安装并自动重启，显示进度和失败原因。
+            - 首次需手动安装 v1.0.15 或更新版本，以启用验签公钥；旧版无法通过服务端补装更新器。
 
             ### 下载
 
@@ -433,6 +439,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
       - name: Download all release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -447,63 +454,11 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          set -euo pipefail
-          VERSION="${TAG#v}"
-          PUB_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          base_url="https://github.com/$REPO/releases/download/$TAG"
-          mac_url=""; mac_sig=""
-          win_url=""; win_sig=""
-          linux_x64_url=""; linux_x64_sig=""
-          linux_arm64_url=""; linux_arm64_sig=""
-          shopt -s nullglob
-          for sig in dl/*.sig; do
-            base=${sig%.sig}
-            fname=$(basename "$base")
-            url="$base_url/$fname"
-            sig_content=$(cat "$sig")
-            case "$fname" in
-              *.tar.gz)           mac_url="$url"; mac_sig="$sig_content";;
-              *-Linux-arm64.*)    linux_arm64_url="$url"; linux_arm64_sig="$sig_content";;
-              *-Linux-x86_64.*)   linux_x64_url="$url"; linux_x64_sig="$sig_content";;
-              *.msi|*.exe)        win_url="$url"; win_sig="$sig_content";;
-            esac
-          done
-          tmp_json=$(mktemp)
-          {
-            echo '{'
-            echo "  \"version\": \"$VERSION\","
-            echo "  \"notes\": \"Release $TAG\","
-            echo "  \"pub_date\": \"$PUB_DATE\","
-            echo '  "platforms": {'
-            first=1
-            if [ -n "$mac_url" ] && [ -n "$mac_sig" ]; then
-              for key in darwin-aarch64 darwin-x86_64; do
-                [ $first -eq 0 ] && echo ','
-                echo "    \"$key\": {\"signature\": \"$mac_sig\", \"url\": \"$mac_url\"}"
-                first=0
-              done
-            fi
-            if [ -n "$win_url" ] && [ -n "$win_sig" ]; then
-              [ $first -eq 0 ] && echo ','
-              echo "    \"windows-x86_64\": {\"signature\": \"$win_sig\", \"url\": \"$win_url\"}"
-              first=0
-            fi
-            if [ -n "$linux_x64_url" ] && [ -n "$linux_x64_sig" ]; then
-              [ $first -eq 0 ] && echo ','
-              echo "    \"linux-x86_64\": {\"signature\": \"$linux_x64_sig\", \"url\": \"$linux_x64_url\"}"
-              first=0
-            fi
-            if [ -n "$linux_arm64_url" ] && [ -n "$linux_arm64_sig" ]; then
-              [ $first -eq 0 ] && echo ','
-              echo "    \"linux-aarch64\": {\"signature\": \"$linux_arm64_sig\", \"url\": \"$linux_arm64_url\"}"
-              first=0
-            fi
-            echo '  }'
-            echo '}'
-          } > "$tmp_json"
-          cat "$tmp_json"
-          mv "$tmp_json" latest.json
+          node --test scripts/generate-updater-manifest.test.mjs
+          node scripts/generate-updater-manifest.mjs dl
       - name: Upload latest.json to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+        run: |
+          gh release upload "$GITHUB_REF_NAME" latest.json --clobber --repo "$GITHUB_REPOSITORY"
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest --repo "$GITHUB_REPOSITORY"

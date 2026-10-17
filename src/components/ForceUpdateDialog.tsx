@@ -1,6 +1,7 @@
 import { Loader2, Download, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useUpdate } from "@/contexts/UpdateContext";
+import { updateStatusLabel } from "@/lib/updater";
 
 export function ForceUpdateDialog() {
   const {
@@ -9,6 +10,10 @@ export function ForceUpdateDialog() {
     gatewayInfo,
     applyUpdate,
     isChecking,
+    isUpdating,
+    updatePhase,
+    downloadProgress,
+    error,
   } = useUpdate();
 
   if (!updateRequired) return null;
@@ -37,16 +42,29 @@ export function ForceUpdateDialog() {
         )}
         <Button
           className="w-full"
-          disabled={isChecking}
+          disabled={isChecking || isUpdating}
           onClick={() => applyUpdate().catch(console.error)}
         >
-          {isChecking ? (
+          {isChecking || isUpdating ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
           ) : (
             <Download className="mr-2 h-4 w-4" />
           )}
-          立即更新
+          {updateStatusLabel(updatePhase, downloadProgress)}
         </Button>
+        {isUpdating && (
+          <progress
+            aria-label="更新下载进度"
+            className="mt-3 w-full"
+            max={100}
+            value={downloadProgress ?? undefined}
+          />
+        )}
+        {error && (
+          <p role="alert" className="mt-3 text-sm text-red-600 break-words">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

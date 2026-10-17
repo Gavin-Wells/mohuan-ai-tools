@@ -46,25 +46,40 @@ export interface CheckOptions {
   channel?: UpdateChannel;
 }
 
+export function updateStatusLabel(
+  phase: UpdaterPhase,
+  progress: number | null,
+): string {
+  if (phase === "checking") return "正在检查更新包";
+  if (phase === "downloading")
+    return progress === null ? "正在下载更新" : `正在下载 ${progress}%`;
+  if (phase === "installing") return "正在安装更新";
+  if (phase === "restarting") return "正在重启";
+  return "更新并重启";
+}
+
 function mapUpdateHandle(raw: Update): UpdateHandle {
   return {
     version: (raw as any).version ?? "",
     notes: (raw as any).notes,
     date: (raw as any).date,
     async downloadAndInstall(onProgress?: (e: UpdateProgressEvent) => void) {
-      await (raw as any).downloadAndInstall((evt: any) => {
-        if (!onProgress) return;
-        const mapped: UpdateProgressEvent = {
-          event: evt?.event,
-        };
-        if (evt?.event === "Started") {
-          mapped.total = evt?.data?.contentLength ?? 0;
-          mapped.downloaded = 0;
-        } else if (evt?.event === "Progress") {
-          mapped.downloaded = evt?.data?.chunkLength ?? 0; // 累积由调用方完成
-        }
-        onProgress(mapped);
-      });
+      await (raw as any).downloadAndInstall(
+        (evt: any) => {
+          if (!onProgress) return;
+          const mapped: UpdateProgressEvent = {
+            event: evt?.event,
+          };
+          if (evt?.event === "Started") {
+            mapped.total = evt?.data?.contentLength ?? 0;
+            mapped.downloaded = 0;
+          } else if (evt?.event === "Progress") {
+            mapped.downloaded = evt?.data?.chunkLength ?? 0; // 累积由调用方完成
+          }
+          onProgress(mapped);
+        },
+        { timeout: 300000 },
+      );
     },
     // 透传可选 API（若插件版本支持）
     download: (raw as any).download

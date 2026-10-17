@@ -6,13 +6,10 @@ import React, {
   useCallback,
   useRef,
 } from "react";
-import { toast } from "sonner";
-import { settingsApi } from "@/lib/api/settings";
-import type { UpdateHandle, UpdateInfo } from "../lib/updater";
-import { relaunchApp } from "../lib/updater";
+import type { UpdateHandle, UpdateInfo, UpdaterPhase } from "../lib/updater";
+import { checkForUpdate, relaunchApp } from "../lib/updater";
 import {
   checkCombinedUpdate,
-  getPreferredDownloadUrl,
   type CombinedUpdateState,
 } from "../lib/desktopUpdatePolicy";
 import type { DesktopToolUpdateInfo } from "@/lib/api/desktopToolUpdate";
@@ -26,6 +23,9 @@ interface UpdateContextValue {
   gatewayInfo: DesktopToolUpdateInfo | null;
   availableVersion: string | null;
   isChecking: boolean;
+  isUpdating: boolean;
+  updatePhase: UpdaterPhase;
+  downloadProgress: number | null;
   error: string | null;
   isDismissed: boolean;
   dismissUpdate: () => void;
@@ -46,67 +46,90 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
   const [isChecking, setIsChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
-  const autoInstallStarted = useRef(false);
+  const [updatePhase, setUpdatePhase] = useState<UpdaterPhase>("idle");
+  const [downloadProgress, setDownloadProgress] = useState<number | null>(null);
+  const updateTask = useRef<Promise<void> | null>(null);
   const isCheckingRef = useRef(false);
 
-  const syncDismissState = useCallback((version: string | null, required: boolean) => {
-    if (!version || required) {
-      setIsDismissed(false);
-      return;
-    }
-    let dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
-    if (!dismissedVersion) {
-      const legacy = localStorage.getItem(LEGACY_DISMISSED_KEY);
-      if (legacy) {
-        localStorage.setItem(DISMISSED_VERSION_KEY, legacy);
-        localStorage.removeItem(LEGACY_DISMISSED_KEY);
-        dismissedVersion = legacy;
-      }
-    }
-    setIsDismissed(dismissedVersion === version);
-  }, []);
-
-  const applyUpdate = useCallback(async () => {
-    const downloadUrl = combined ? getPreferredDownloadUrl(combined) : null;
-    if (updateHandle) {
-      await updateHandle.downloadAndInstall();
-      await relaunchApp();
-      return;
-    }
-    if (downloadUrl) {
-      await settingsApi.openExternal(downloadUrl);
-      toast.message("已打开下载页面，请安装新版本后重启工具");
-      return;
-    }
-    throw new Error("没有可用的更新包");
-  }, [combined, updateHandle]);
-
-  const runAutoUpdate = useCallback(
-    async (state: CombinedUpdateState) => {
-      if (!state.updateAvailable || !state.autoUpdate || autoInstallStarted.current) {
+  const syncDismissState = useCallback(
+    (version: string | null, required: boolean) => {
+      if (!version || required) {
+        setIsDismissed(false);
         return;
       }
-      autoInstallStarted.current = true;
-      try {
-        if (state.tauriHandle) {
-          await state.tauriHandle.downloadAndInstall();
-          await relaunchApp();
-          return;
+      let dismissedVersion = localStorage.getItem(DISMISSED_VERSION_KEY);
+      if (!dismissedVersion) {
+        const legacy = localStorage.getItem(LEGACY_DISMISSED_KEY);
+        if (legacy) {
+          localStorage.setItem(DISMISSED_VERSION_KEY, legacy);
+          localStorage.removeItem(LEGACY_DISMISSED_KEY);
+          dismissedVersion = legacy;
         }
-        const url = getPreferredDownloadUrl(state);
-        if (url) {
-          await settingsApi.openExternal(url);
-        }
-      } catch (err) {
-        console.error("Auto update failed:", err);
-        autoInstallStarted.current = false;
       }
+      setIsDismissed(dismissedVersion === version);
     },
     [],
   );
 
+  const applyUpdate = useCallback(async () => {
+    if (updateTask.current) return updateTask.current;
+    const task = (async () => {
+      setError(null);
+      setDownloadProgress(null);
+      setUpdatePhase("checking");
+      try {
+        let handle = updateHandle;
+        if (!handle) {
+          const checked = await checkForUpdate({ timeout: 30000 });
+          if (checked.status === "available") handle = checked.update;
+        }
+        if (!handle)
+          throw new Error(
+            "没有可用的签名更新包，请稍后重试；旧版或便携版可能需要先安装新版安装包。",
+          );
+        if (
+          combined?.gateway?.update_available &&
+          combined.gateway.latest_version !== handle.version
+        ) {
+          throw new Error("更新清单版本尚未同步，请稍后重新检查更新。");
+        }
+        setUpdatePhase("downloading");
+        let downloaded = 0,
+          total = 0;
+        await handle.downloadAndInstall((event) => {
+          if (event.event === "Started") {
+            downloaded = 0;
+            total = event.total ?? 0;
+            setDownloadProgress(total > 0 ? 0 : null);
+          } else if (event.event === "Progress") {
+            downloaded += event.downloaded ?? 0;
+            if (total > 0)
+              setDownloadProgress(
+                Math.min(100, Math.round((downloaded / total) * 100)),
+              );
+          } else if (event.event === "Finished") {
+            setDownloadProgress(100);
+            setUpdatePhase("installing");
+          }
+        });
+        setUpdatePhase("restarting");
+        await relaunchApp();
+      } catch (err) {
+        setUpdatePhase("error");
+        setError(err instanceof Error ? err.message : String(err));
+        throw err;
+      }
+    })();
+    updateTask.current = task;
+    try {
+      await task;
+    } finally {
+      updateTask.current = null;
+    }
+  }, [combined, updateHandle]);
+
   const checkUpdate = useCallback(async () => {
-    if (isCheckingRef.current) return false;
+    if (isCheckingRef.current || updateTask.current) return false;
     isCheckingRef.current = true;
     setIsChecking(true);
     setError(null);
@@ -118,10 +141,6 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
       setUpdateHandle(state.tauriHandle);
       syncDismissState(state.availableVersion, state.updateRequired);
 
-      if (state.updateAvailable && state.autoUpdate && !state.updateRequired) {
-        void runAutoUpdate(state);
-      }
-
       return state.updateAvailable;
     } catch (err) {
       console.error("检查更新失败:", err);
@@ -131,7 +150,7 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
       setIsChecking(false);
       isCheckingRef.current = false;
     }
-  }, [runAutoUpdate, syncDismissState]);
+  }, [syncDismissState]);
 
   const dismissUpdate = useCallback(() => {
     if (combined?.updateRequired) return;
@@ -156,7 +175,8 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
   }, [checkUpdate]);
 
   useEffect(() => {
-    const intervalMs = (combined?.gateway?.check_interval_seconds ?? 3600) * 1000;
+    const intervalMs =
+      (combined?.gateway?.check_interval_seconds ?? 3600) * 1000;
     const timer = window.setInterval(() => {
       checkUpdate().catch(console.error);
     }, intervalMs);
@@ -184,6 +204,14 @@ export function UpdateProvider({ children }: { children: React.ReactNode }) {
     gatewayInfo: combined?.gateway ?? null,
     availableVersion: combined?.availableVersion ?? null,
     isChecking,
+    isUpdating: [
+      "checking",
+      "downloading",
+      "installing",
+      "restarting",
+    ].includes(updatePhase),
+    updatePhase,
+    downloadProgress,
     error,
     isDismissed,
     dismissUpdate,

@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge";
 import { motion } from "framer-motion";
 import appIcon from "@/assets/icons/app-icon.png";
 import { isWindows } from "@/lib/platform";
+import { updateStatusLabel } from "@/lib/updater";
 
 interface AboutSectionProps {
   isPortable: boolean;
@@ -93,18 +94,21 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
   const { t } = useTranslation();
   const [version, setVersion] = useState<string | null>(null);
   const [isLoadingVersion, setIsLoadingVersion] = useState(true);
-  const [isDownloading, setIsDownloading] = useState(false);
   const [toolVersions, setToolVersions] = useState<ToolVersion[]>([]);
   const [isLoadingTools, setIsLoadingTools] = useState(true);
 
   const {
     hasUpdate,
     updateInfo,
-    updateHandle,
+    availableVersion,
     checkUpdate,
     resetDismiss,
     applyUpdate,
     isChecking,
+    isUpdating,
+    updatePhase,
+    downloadProgress,
+    error: updateError,
   } = useUpdate();
 
   const [wslShellByTool, setWslShellByTool] = useState<
@@ -240,15 +244,11 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
           : "";
 
       if (!displayVersion) {
-        await settingsApi.openExternal(
-          "https://modelswitch.org/",
-        );
+        await settingsApi.openExternal("https://modelswitch.org/");
         return;
       }
 
-      await settingsApi.openExternal(
-        "https://modelswitch.org/",
-      );
+      await settingsApi.openExternal("https://modelswitch.org/");
     } catch (error) {
       console.error("[AboutSection] Failed to open release notes", error);
       toast.error(t("settings.openReleaseNotesFailed"));
@@ -266,23 +266,14 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
         return;
       }
 
-      setIsDownloading(true);
       try {
         resetDismiss();
         await applyUpdate();
       } catch (error) {
         console.error("[AboutSection] Update failed", error);
-        toast.error(t("settings.updateFailed"));
-        try {
-          await settingsApi.checkUpdates();
-        } catch (fallbackError) {
-          console.error(
-            "[AboutSection] Failed to open fallback updater",
-            fallbackError,
-          );
-        }
-      } finally {
-        setIsDownloading(false);
+        toast.error(
+          error instanceof Error ? error.message : t("settings.updateFailed"),
+        );
       }
       return;
     }
@@ -373,20 +364,20 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
               type="button"
               size="sm"
               onClick={handleCheckUpdate}
-              disabled={isChecking || isDownloading}
+              disabled={isChecking || isUpdating}
               className="h-8 gap-1.5 text-xs"
             >
-              {isDownloading ? (
+              {isUpdating ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t("settings.updating")}
+                  {updateStatusLabel(updatePhase, downloadProgress)}
                 </>
               ) : hasUpdate ? (
                 <>
                   <Download className="h-3.5 w-3.5" />
-                  {t("settings.updateTo", {
-                    version: updateInfo?.availableVersion ?? "",
-                  })}
+                  {isPortable
+                    ? "下载新版安装包"
+                    : `更新至 v${availableVersion ?? ""} 并重启`}
                 </>
               ) : isChecking ? (
                 <>
@@ -403,6 +394,19 @@ export function AboutSection({ isPortable }: AboutSectionProps) {
           </div>
         </div>
 
+        {isUpdating && (
+          <progress
+            aria-label="更新下载进度"
+            className="w-full"
+            max={100}
+            value={downloadProgress ?? undefined}
+          />
+        )}
+        {updateError && (
+          <p role="alert" className="text-sm text-red-600 break-words">
+            {updateError}
+          </p>
+        )}
         {hasUpdate && updateInfo && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
