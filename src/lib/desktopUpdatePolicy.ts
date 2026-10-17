@@ -3,7 +3,12 @@ import {
   pickPlatformDownload,
   type DesktopToolUpdateInfo,
 } from "@/lib/api/desktopToolUpdate";
-import { getCurrentVersion, checkForUpdate, type UpdateHandle, type UpdateInfo } from "../lib/updater";
+import {
+  getCurrentVersion,
+  checkForUpdate,
+  type UpdateHandle,
+  type UpdateInfo,
+} from "../lib/updater";
 
 export type CombinedUpdateState = {
   gateway: DesktopToolUpdateInfo | null;
@@ -22,11 +27,12 @@ function mergeUpdateState(
     | { status: "up-to-date" }
     | { status: "available"; info: UpdateInfo; update: UpdateHandle }
     | null,
-  currentVersion: string,
 ): CombinedUpdateState {
-  const tauriAvailable = tauri?.status === "available" ? tauri.info.availableVersion : null;
-  const gatewayAvailable =
-    gateway?.update_available ? gateway.latest_version : null;
+  const tauriAvailable =
+    tauri?.status === "available" ? tauri.info.availableVersion : null;
+  const gatewayAvailable = gateway?.update_available
+    ? gateway.latest_version
+    : null;
 
   const availableVersion = gatewayAvailable || tauriAvailable;
   const updateAvailable = Boolean(availableVersion);
@@ -41,7 +47,9 @@ function mergeUpdateState(
     updateRequired,
     autoUpdate,
     availableVersion,
-    releaseNotes: gateway?.release_notes || tauri?.status === "available" ? tauri.info.notes || "" : "",
+    releaseNotes:
+      gateway?.release_notes ||
+      (tauri?.status === "available" ? tauri.info.notes || "" : ""),
   };
 }
 
@@ -67,7 +75,7 @@ export async function checkCombinedUpdate(): Promise<{
 
   return {
     currentVersion,
-    state: mergeUpdateState(gateway, tauri, currentVersion),
+    state: mergeUpdateState(gateway, tauri),
   };
 }
 

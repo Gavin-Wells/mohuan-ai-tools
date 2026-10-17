@@ -36,7 +36,7 @@ export function AppSwitcher({
     hermes: "hermes",
   };
   const appDisplayName: Record<AppId, string> = {
-    claude: "Claude",
+    claude: "Claude Code",
     "claude-desktop": "Claude Desktop",
     codex: "Codex",
     gemini: "Gemini",

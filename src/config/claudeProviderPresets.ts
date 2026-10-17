@@ -2,6 +2,7 @@
  * 预设供应商配置模板（模幻AI工具 — 仅硅基链路网关）
  */
 import { ProviderCategory } from "../types";
+import type { ClaudeModels } from "@/utils/mohuanClaudeModel";
 import {
   MOHUAN_ANTHROPIC_BASE_URL,
   MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
@@ -68,8 +69,8 @@ export const providerPresets: ProviderPreset[] = [
       },
     },
     category: "third_party",
-    apiFormat: "openai_chat",
-    endpointCandidates: [MOHUAN_GATEWAY_V1],
+    apiFormat: "anthropic",
+    endpointCandidates: [MOHUAN_ANTHROPIC_BASE_URL],
     modelsUrl: `${MOHUAN_GATEWAY_V1}/models`,
     theme: {
       icon: "claude",
@@ -82,7 +83,10 @@ export const providerPresets: ProviderPreset[] = [
 ];
 
 /** 硅基链路 Claude Code live 配置（写入 ~/.claude/settings.json） */
-export function buildMohuanClaudeSettings(apiKey: string): { env: Record<string, string> } {
+export function buildMohuanClaudeSettings(
+  apiKey: string,
+  models?: ClaudeModels,
+): { env: Record<string, string> } {
   const preset = providerPresets[0];
   const baseEnv =
     (preset.settingsConfig as { env?: Record<string, string> }).env ?? {};
@@ -90,6 +94,14 @@ export function buildMohuanClaudeSettings(apiKey: string): { env: Record<string,
     env: {
       ...baseEnv,
       ANTHROPIC_AUTH_TOKEN: apiKey.trim(),
+      ...(models
+        ? {
+            ANTHROPIC_MODEL: models.model,
+            ANTHROPIC_DEFAULT_OPUS_MODEL: models.opus,
+            ANTHROPIC_DEFAULT_SONNET_MODEL: models.sonnet,
+            ANTHROPIC_DEFAULT_HAIKU_MODEL: models.haiku,
+          }
+        : {}),
     },
   };
 }

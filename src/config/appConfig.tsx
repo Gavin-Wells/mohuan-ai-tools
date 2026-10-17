@@ -39,7 +39,7 @@ export const MCP_APP_IDS: AppId[] = ["claude", "codex"];
 
 export const APP_ICON_MAP: Record<AppId, AppConfig> = {
   claude: {
-    label: "Claude",
+    label: "Claude Code",
     icon: <ClaudeIcon size={14} />,
     activeClass:
       "bg-orange-500/10 ring-1 ring-orange-500/20 hover:bg-orange-500/20 text-orange-600 dark:text-orange-400",

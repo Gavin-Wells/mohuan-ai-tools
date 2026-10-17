@@ -224,7 +224,10 @@ fn find_codex_legacy_desktop() -> Option<String> {
             "/usr/bin/codex",
             "/usr/local/bin/codex",
             "/snap/bin/codex",
-            &format!("{}/.local/bin/codex", std::env::var("HOME").unwrap_or_default()),
+            &format!(
+                "{}/.local/bin/codex",
+                std::env::var("HOME").unwrap_or_default()
+            ),
         ];
         for p in &candidates {
             if std::path::Path::new(p).exists() {
@@ -323,12 +326,7 @@ fn launch_codex_cli_runtime() -> Result<String, String> {
     use std::process::Command;
 
     if let Some(bin) = resolve_executable_path("codex") {
-        if Command::new(&bin)
-            .arg("app")
-            .spawn()
-            .map(|_| ())
-            .is_ok()
-        {
+        if Command::new(&bin).arg("app").spawn().map(|_| ()).is_ok() {
             return Ok("Codex 已启动".to_string());
         }
     }
@@ -391,11 +389,7 @@ fn find_codex_in_windows_apps() -> Option<PathBuf> {
         if !name.starts_with("OpenAI.Codex_") {
             continue;
         }
-        let exe = entry
-            .path()
-            .join("app")
-            .join("resources")
-            .join("codex.exe");
+        let exe = entry.path().join("app").join("resources").join("codex.exe");
         if exe.is_file() {
             matches.push(exe);
         }
@@ -565,7 +559,8 @@ pub async fn install_codex_cli() -> Result<String, String> {
     .map_err(|e| format!("安装任务失败: {e}"))??;
     if detect_codex_runtime().is_none() {
         return Err(
-            "安装脚本已执行，但仍未检测到 ChatGPT / Codex，请重启应用或点击「重新检测」".to_string(),
+            "安装脚本已执行，但仍未检测到 ChatGPT / Codex，请重启应用或点击「重新检测」"
+                .to_string(),
         );
     }
     Ok("ChatGPT / Codex 安装完成".to_string())
@@ -586,10 +581,9 @@ pub async fn setup_and_launch_codex(
     if let Some(catalog) = catalogJson {
         let catalog = catalog.trim();
         if !catalog.is_empty() {
-            let catalog_path = crate::codex_config::get_codex_config_dir()
-                .join("mohuan-model-catalog.json");
-            std::fs::write(&catalog_path, catalog)
-                .map_err(|e| format!("写入模型目录失败: {e}"))?;
+            let catalog_path =
+                crate::codex_config::get_codex_config_dir().join("mohuan-model-catalog.json");
+            std::fs::write(&catalog_path, catalog).map_err(|e| format!("写入模型目录失败: {e}"))?;
         }
     }
 
@@ -597,8 +591,8 @@ pub async fn setup_and_launch_codex(
     crate::codex_config::write_codex_live_atomic(&auth_value, Some(&configToml))
         .map_err(|e| format!("写入 Codex 配置失败: {e}"))?;
 
-    let runtime = detect_codex_runtime()
-        .ok_or_else(|| "未找到 ChatGPT / Codex，请先安装".to_string())?;
+    let runtime =
+        detect_codex_runtime().ok_or_else(|| "未找到 ChatGPT / Codex，请先安装".to_string())?;
     launch_codex_runtime(&runtime)
 }
 
@@ -608,12 +602,10 @@ pub async fn restore_codex_defaults() -> Result<bool, String> {
     let auth_path = crate::codex_config::get_codex_auth_path();
     let config_path = crate::codex_config::get_codex_config_path();
     if auth_path.exists() {
-        std::fs::remove_file(&auth_path)
-            .map_err(|e| format!("删除 auth.json 失败: {e}"))?;
+        std::fs::remove_file(&auth_path).map_err(|e| format!("删除 auth.json 失败: {e}"))?;
     }
     if config_path.exists() {
-        std::fs::remove_file(&config_path)
-            .map_err(|e| format!("删除 config.toml 失败: {e}"))?;
+        std::fs::remove_file(&config_path).map_err(|e| format!("删除 config.toml 失败: {e}"))?;
     }
     Ok(true)
 }
@@ -625,6 +617,10 @@ const MOHUAN_CLAUDE_ENV_KEYS: &[&str] = &[
     "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     "ANTHROPIC_DEFAULT_SONNET_MODEL",
     "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    "ANTHROPIC_API_KEY",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
 ];
 
 fn resolve_executable_path(tool: &str) -> Option<String> {
@@ -810,11 +806,13 @@ fn find_codex_cli() -> Option<String> {
     None
 }
 
-fn merge_claude_settings_env(settings_patch: &serde_json::Value) -> Result<(), String> {
-    use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
+fn merge_claude_settings_env(
+    path: &Path,
+    settings_patch: &serde_json::Value,
+) -> Result<(), String> {
+    use crate::config::{read_json_file, write_json_file};
     use crate::services::provider::sanitize_claude_settings_for_live;
 
-    let path = get_claude_settings_path();
     let mut settings: serde_json::Value = if path.exists() {
         read_json_file(&path).map_err(|e| e.to_string())?
     } else {
@@ -824,6 +822,12 @@ fn merge_claude_settings_env(settings_patch: &serde_json::Value) -> Result<(), S
     let Some(patch_env) = settings_patch.get("env").and_then(|v| v.as_object()) else {
         return Err("Claude 配置缺少 env 字段".to_string());
     };
+    if patch_env
+        .iter()
+        .any(|(key, value)| !MOHUAN_CLAUDE_ENV_KEYS.contains(&key.as_str()) || !value.is_string())
+    {
+        return Err("Claude 网关配置包含无效的环境变量".to_string());
+    }
 
     let settings_obj = settings
         .as_object_mut()
@@ -834,27 +838,83 @@ fn merge_claude_settings_env(settings_patch: &serde_json::Value) -> Result<(), S
     let env_obj = env
         .as_object_mut()
         .ok_or_else(|| "Claude settings.json env 必须是对象".to_string())?;
+    let backup_path = path.with_file_name("mohuan-env-backup.json");
+    if !backup_path.exists() {
+        let backup: serde_json::Map<String, serde_json::Value> = MOHUAN_CLAUDE_ENV_KEYS
+            .iter()
+            .map(|key| {
+                (
+                    key.to_string(),
+                    env_obj
+                        .get(*key)
+                        .cloned()
+                        .unwrap_or(serde_json::Value::Null),
+                )
+            })
+            .collect();
+        write_json_file(&backup_path, &backup).map_err(|e| e.to_string())?;
+        restrict_claude_config_permissions(&backup_path)?;
+    }
     for (key, value) in patch_env {
         env_obj.insert(key.clone(), value.clone());
     }
 
     let sanitized = sanitize_claude_settings_for_live(&settings);
-    write_json_file(&path, &sanitized).map_err(|e| e.to_string())
+    write_json_file(&path, &sanitized).map_err(|e| e.to_string())?;
+    restrict_claude_config_permissions(&path)
 }
 
-fn restore_claude_mohuan_env() -> Result<(), String> {
-    use crate::config::{get_claude_settings_path, read_json_file, write_json_file};
+fn restrict_claude_config_permissions(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+            .map_err(|e| format!("设置 Claude 配置权限失败: {e}"))?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
 
-    let path = get_claude_settings_path();
+fn restore_claude_mohuan_env(path: &Path) -> Result<(), String> {
+    use crate::config::{read_json_file, write_json_file};
+
     if !path.exists() {
         return Ok(());
     }
 
-    let mut settings: serde_json::Value =
-        read_json_file(&path).map_err(|e| e.to_string())?;
+    let mut settings: serde_json::Value = read_json_file(&path).map_err(|e| e.to_string())?;
+    let backup_path = path.with_file_name("mohuan-env-backup.json");
+    let backup: serde_json::Value = if backup_path.exists() {
+        read_json_file(&backup_path).map_err(|e| e.to_string())?
+    } else {
+        serde_json::json!({})
+    };
+    settings
+        .as_object_mut()
+        .ok_or_else(|| "Claude settings.json 根节点必须是对象".to_string())?
+        .entry("env")
+        .or_insert_with(|| serde_json::json!({}));
+    if !settings["env"].is_object() {
+        return Err("Claude settings.json env 必须是对象".to_string());
+    }
     if let Some(env) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
         for key in MOHUAN_CLAUDE_ENV_KEYS {
+            if !backup_path.exists()
+                && matches!(
+                    *key,
+                    "ANTHROPIC_API_KEY"
+                        | "CLAUDE_CODE_USE_BEDROCK"
+                        | "CLAUDE_CODE_USE_VERTEX"
+                        | "CLAUDE_CODE_USE_FOUNDRY"
+                )
+            {
+                continue;
+            }
             env.remove(*key);
+            if let Some(value) = backup.get(*key).filter(|v| !v.is_null()) {
+                env.insert(key.to_string(), value.clone());
+            }
         }
         if env.is_empty() {
             if let Some(obj) = settings.as_object_mut() {
@@ -863,7 +923,35 @@ fn restore_claude_mohuan_env() -> Result<(), String> {
         }
     }
 
-    write_json_file(&path, &settings).map_err(|e| e.to_string())
+    write_json_file(&path, &settings).map_err(|e| e.to_string())?;
+    restrict_claude_config_permissions(&path)?;
+    if backup_path.exists() {
+        std::fs::remove_file(&backup_path).map_err(|e| format!("删除配置备份失败: {e}"))?;
+    }
+    Ok(())
+}
+
+fn claude_launch_command(path: &str, settings_path: &Path) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let parent = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
+        format!(
+            "set \"PATH={};%PATH%\"\r\ncall \"{}\" --settings \"{}\"",
+            parent.to_string_lossy().replace('%', "%%"),
+            path.replace('%', "%%"),
+            settings_path.to_string_lossy().replace('%', "%%")
+        )
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let parent = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
+        format!(
+            r#"PATH={}:"$PATH" {} --settings {}"#,
+            shell_single_quote(&parent.to_string_lossy()),
+            shell_single_quote(path),
+            shell_single_quote(&settings_path.to_string_lossy())
+        )
+    }
 }
 
 /// 检测 Claude Code CLI 是否已安装
@@ -906,13 +994,30 @@ pub async fn setup_and_launch_claude(
         return Err("API Key 不能为空".to_string());
     }
 
-    if find_claude_cli().is_none() {
-        return Err("未检测到 Claude Code CLI，请先安装".to_string());
+    let claude_path =
+        find_claude_cli().ok_or_else(|| "未检测到 Claude Code CLI，请先安装".to_string())?;
+    let mut config = settingsConfig;
+    let env = config
+        .get_mut("env")
+        .and_then(|v| v.as_object_mut())
+        .ok_or_else(|| "Claude 配置缺少 env 字段".to_string())?;
+    env.insert("ANTHROPIC_AUTH_TOKEN".into(), serde_json::json!(api_key));
+    env.insert(
+        "ANTHROPIC_BASE_URL".into(),
+        serde_json::json!("https://api.modelswitch.org"),
+    );
+    env.insert("ANTHROPIC_API_KEY".into(), serde_json::json!(""));
+    for flag in [
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+    ] {
+        env.insert(flag.into(), serde_json::json!("0"));
     }
+    merge_claude_settings_env(&crate::config::get_claude_settings_path(), &config)?;
+    let command = claude_launch_command(&claude_path, &crate::config::get_claude_settings_path());
 
-    merge_claude_settings_env(&settingsConfig)?;
-
-    tokio::task::spawn_blocking(|| launch_terminal_running("claude", "claude"))
+    tokio::task::spawn_blocking(move || launch_terminal_running(&command, "claude"))
         .await
         .map_err(|e| format!("启动终端任务失败: {e}"))??;
 
@@ -922,7 +1027,7 @@ pub async fn setup_and_launch_claude(
 /// 还原 Claude Code 硅基链路相关环境变量
 #[tauri::command]
 pub async fn restore_claude_defaults() -> Result<bool, String> {
-    restore_claude_mohuan_env()?;
+    restore_claude_mohuan_env(&crate::config::get_claude_settings_path())?;
     Ok(true)
 }
 
@@ -977,10 +1082,7 @@ pub async fn copy_text_to_clipboard(text: String) -> Result<bool, String> {
 pub async fn check_for_updates(handle: AppHandle) -> Result<bool, String> {
     handle
         .opener()
-        .open_url(
-            "https://modelswitch.org/#tool",
-            None::<String>,
-        )
+        .open_url("https://modelswitch.org/#tool", None::<String>)
         .map_err(|e| format!("打开更新页面失败: {e}"))?;
 
     Ok(true)
@@ -2205,7 +2307,7 @@ pub(crate) fn launch_terminal_running(command_line: &str, label: &str) -> Result
         let content = format!(
             r#"#!/bin/bash
 trap 'rm -f "{script_path}"' EXIT
-echo "[cc-switch] Starting: {cmd}"
+echo "[cc-switch] Starting command..."
 echo ""
 {cmd}
 echo ""
@@ -2328,7 +2430,7 @@ read -n 1 -s
 
         let bat_file = temp_dir.join(format!("cc_switch_{}_{}.bat", label, pid));
         let content = format!(
-            "@echo off\r\necho [cc-switch] Starting: {cmd}\r\necho.\r\n{cmd}\r\necho.\r\necho [cc-switch] Command exited. Press any key to close.\r\npause >nul\r\ndel \"%~f0\" >nul 2>&1\r\n",
+            "@echo off\r\necho [cc-switch] Starting command...\r\necho.\r\n{cmd}\r\necho.\r\necho [cc-switch] Command exited. Press any key to close.\r\npause >nul\r\ndel \"%~f0\" >nul 2>&1\r\n",
             cmd = command_line,
         );
         std::fs::write(&bat_file, &content).map_err(|e| format!("写入批处理文件失败: {e}"))?;
@@ -2391,6 +2493,71 @@ pub async fn set_window_theme(window: tauri::Window, theme: String) -> Result<()
 mod tests {
     use super::*;
     use std::path::{Path, PathBuf};
+
+    #[test]
+    fn claude_gateway_setup_preserves_settings_and_original_backup() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        let original = serde_json::json!({"permissions": {"allow": ["Read"]}, "env": {"ANTHROPIC_API_KEY": "original-key", "EDITOR": "vim"}});
+        crate::config::write_json_file(&path, &original).unwrap();
+        let patch = serde_json::json!({"env": {"ANTHROPIC_AUTH_TOKEN": "gateway-key", "ANTHROPIC_API_KEY": "", "ANTHROPIC_MODEL": "claude-opus-5-5"}});
+        merge_claude_settings_env(&path, &patch).unwrap();
+        merge_claude_settings_env(&path, &patch).unwrap();
+        let configured: serde_json::Value = crate::config::read_json_file(&path).unwrap();
+        assert_eq!(configured["permissions"], original["permissions"]);
+        assert_eq!(configured["env"]["EDITOR"], "vim");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
+        restore_claude_mohuan_env(&path).unwrap();
+        let restored: serde_json::Value = crate::config::read_json_file(&path).unwrap();
+        assert_eq!(restored, original);
+        assert!(!path.with_file_name("mohuan-env-backup.json").exists());
+    }
+
+    #[test]
+    fn invalid_claude_patch_does_not_modify_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        crate::config::write_json_file(&path, &serde_json::json!({"env": {"EDITOR": "vim"}}))
+            .unwrap();
+        let before = std::fs::read(&path).unwrap();
+        assert!(merge_claude_settings_env(
+            &path,
+            &serde_json::json!({"env": {"BASH_ENV": "unsafe"}})
+        )
+        .is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(!path.with_file_name("mohuan-env-backup.json").exists());
+    }
+
+    #[test]
+    fn legacy_claude_restore_keeps_unmanaged_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        crate::config::write_json_file(&path, &serde_json::json!({"env": {"ANTHROPIC_AUTH_TOKEN": "old-gateway-key", "ANTHROPIC_API_KEY": "original-key"}})).unwrap();
+        restore_claude_mohuan_env(&path).unwrap();
+        let restored: serde_json::Value = crate::config::read_json_file(&path).unwrap();
+        assert_eq!(restored["env"]["ANTHROPIC_API_KEY"], "original-key");
+        assert!(restored["env"].get("ANTHROPIC_AUTH_TOKEN").is_none());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    #[test]
+    fn claude_launcher_quotes_executable_and_settings_paths() {
+        let command = claude_launch_command(
+            "/home/test user's/.local/bin/claude",
+            Path::new("/home/test user's/.claude/settings.json"),
+        );
+        assert!(command.contains(r#"--settings '/home/test user'"'"'s/.claude/settings.json'"#));
+        assert!(command.contains("PATH="));
+        assert!(!command.contains("gateway-key"));
+    }
 
     #[test]
     fn test_extract_version() {

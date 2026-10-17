@@ -381,7 +381,7 @@ jobs:
     name: Publish GitHub Release
     runs-on: ubuntu-22.04
     needs: release
-    if: always() && !cancelled()
+    if: needs.release.result == 'success'
     permissions:
       contents: write
     steps:
@@ -406,7 +406,11 @@ jobs:
           body: |
             ## ModelSwitch Tools ${{ github.ref_name }}
 
-            Codex 一键配置启动工具（默认模型 gpt-5.5）
+            Claude Code / Codex 一键配置与启动工具。
+
+            - Claude Code：验证 Key，自动选择可用 Claude 模型，按需安装并启动。
+            - 保留既有 Claude 设置，备份并支持还原网关环境变量。
+            - 修复桌面启动时的 CLI 路径与客户端更新检查。
 
             ### 下载
 

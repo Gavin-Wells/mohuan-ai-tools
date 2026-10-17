@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## ModelSwitch Tools 1.0.12 - 2026-10-17
+
+- Complete Claude Code one-click verification, optional installation, configuration and terminal launch.
+- Resolve available Claude model families from the gateway instead of configuring unavailable model IDs.
+- Back up and restore gateway environment settings while preserving permissions, hooks and unrelated settings.
+- Launch the detected CLI path, including native installs and custom settings directories.
+- Fix gateway-only update checks and retain the existing Codex workflow.
+
 ### Fixed
 
 - **OpenAI Responses API usage parsing robustness**: Hardened `build_anthropic_usage_from_responses()` and the Responses → Anthropic SSE translator so a missing or malformed upstream `usage` no longer produces `"usage": null` in `message_delta`. This unblocks strict Anthropic clients (notably the VSCode Claude Code extension) that crashed with "Cannot read properties of null (reading 'output_tokens')" against providers such as Codex OAuth and DashScope's `compatible-mode/v1/responses` endpoint. Added OpenAI field-name fallbacks (`prompt_tokens` / `completion_tokens`), null/empty/partial object handling, and preserved cache token fields even when input/output tokens are missing (#2422).
