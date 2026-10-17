@@ -4,7 +4,6 @@
 import { ProviderCategory } from "../types";
 import type { PresetTheme } from "./claudeProviderPresets";
 import {
-  MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
   MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL,
   MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL,
   MOHUAN_GATEWAY_V1,
@@ -46,25 +45,18 @@ export interface ClaudeDesktopProviderPreset {
 const brandedRoutes = (
   sonnet: string,
   opus: string,
-  haiku: string,
   supports1m = false,
 ): ClaudeDesktopRoutePreset[] => [
   {
-    routeId: "claude-sonnet-4-6",
+    routeId: "claude-sonnet-5-5",
     upstreamModel: sonnet,
     displayName: sonnet,
     supports1m,
   },
   {
-    routeId: "claude-opus-4-8",
+    routeId: "claude-opus-5-5",
     upstreamModel: opus,
     displayName: opus,
-    supports1m,
-  },
-  {
-    routeId: "claude-haiku-4-5",
-    upstreamModel: haiku,
-    displayName: haiku,
     supports1m,
   },
 ];
@@ -81,7 +73,6 @@ export const claudeDesktopProviderPresets: ClaudeDesktopProviderPreset[] = [
     modelRoutes: brandedRoutes(
       MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL,
       MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL,
-      MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL,
     ),
     endpointCandidates: [MOHUAN_GATEWAY_V1],
     icon: "generic",

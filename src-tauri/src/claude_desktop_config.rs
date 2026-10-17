@@ -35,22 +35,16 @@ pub struct ClaudeDesktopDefaultRoute {
 
 pub const DEFAULT_PROXY_ROUTES: &[ClaudeDesktopDefaultRoute] = &[
     ClaudeDesktopDefaultRoute {
-        route_id: "claude-sonnet-4-6",
+        route_id: "claude-sonnet-5-5",
         env_key: "ANTHROPIC_DEFAULT_SONNET_MODEL",
         display_name: "Sonnet",
-        supports_1m: true,
+        supports_1m: false,
     },
     ClaudeDesktopDefaultRoute {
-        route_id: "claude-opus-4-8",
+        route_id: "claude-opus-5-5",
         env_key: "ANTHROPIC_DEFAULT_OPUS_MODEL",
         display_name: "Opus",
-        supports_1m: true,
-    },
-    ClaudeDesktopDefaultRoute {
-        route_id: "claude-haiku-4-5",
-        env_key: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-        display_name: "Haiku",
-        supports_1m: true,
+        supports_1m: false,
     },
 ];
 

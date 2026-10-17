@@ -11,10 +11,12 @@ export const MOHUAN_ANTHROPIC_BASE_URL = "https://api.modelswitch.org";
 export const MOHUAN_WEB_URL = "https://modelswitch.org/";
 
 /** Claude Code 默认模型（与 ploy-api 官方定价目录对齐） */
-export const MOHUAN_DEFAULT_CLAUDE_MODEL = "claude-opus-4-8";
-export const MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-4-6";
-export const MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL = "claude-opus-4-8";
-export const MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL = "claude-haiku-4-5-20251001";
+export const MOHUAN_DEFAULT_CLAUDE_MODEL = "claude-opus-5-5";
+export const MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL = "claude-sonnet-5-5";
+export const MOHUAN_DEFAULT_CLAUDE_OPUS_MODEL = "claude-opus-5-5";
+// Claude Code's background/Haiku slot uses Sonnet; no separate Haiku route.
+export const MOHUAN_DEFAULT_CLAUDE_HAIKU_MODEL =
+  MOHUAN_DEFAULT_CLAUDE_SONNET_MODEL;
 
 /** Codex 离线回退默认（网关 /v1/models 不可用时使用） */
 export const MOHUAN_DEFAULT_CODEX_MODEL = "gpt-5.6-sol";
