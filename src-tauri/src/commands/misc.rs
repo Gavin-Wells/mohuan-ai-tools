@@ -21,6 +21,9 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const CLAUDE_INSTALL_SCRIPT: &str = "https://claude.ai/install.sh";
 const CODEX_INSTALL_SCRIPT: &str = "https://chatgpt.com/codex/install.sh";
 
+#[path = "claude_cli.rs"]
+mod claude_cli;
+
 #[cfg(target_os = "macos")]
 fn macos_wifi_http_proxy() -> Option<String> {
     use std::process::Command;
@@ -77,7 +80,13 @@ fn run_curl_pipe_bash_install(script_url: &str, tool_label: &str) -> Result<(), 
     #[cfg(target_os = "windows")]
     {
         let ps_url = script_url.replace("/install.sh", "/install.ps1");
-        let ps = format!("$ProgressPreference='SilentlyContinue'; irm '{ps_url}' | iex");
+        let ps = format!(
+            "$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; \
+             try {{ $script = (Invoke-WebRequest -UseBasicParsing -Uri '{ps_url}' -TimeoutSec 60 -ErrorAction Stop).Content; \
+             if ($script.TrimStart().StartsWith('<')) {{ throw 'Installer returned HTML instead of PowerShell' }}; \
+             & ([scriptblock]::Create($script)); if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) {{ exit $LASTEXITCODE }} \
+             }} catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit 1 }}"
+        );
         let mut cmd = Command::new("powershell");
         cmd.args(["-NoProfile", "-NonInteractive", "-Command", &ps]);
         cmd.creation_flags(CREATE_NO_WINDOW);
@@ -661,6 +670,10 @@ fn resolve_executable_path(tool: &str) -> Option<String> {
 fn find_cli_in_common_paths(tool: &str) -> Option<(PathBuf, String)> {
     use std::process::Command;
 
+    if tool == "claude" {
+        return claude_cli::find();
+    }
+
     let home = dirs::home_dir()?;
 
     let mut search_paths: Vec<std::path::PathBuf> = Vec::new();
@@ -787,13 +800,7 @@ fn find_cli_in_common_paths(tool: &str) -> Option<(PathBuf, String)> {
 }
 
 fn find_claude_cli() -> Option<String> {
-    if let Some((path, _)) = find_cli_in_common_paths("claude") {
-        return Some(path.to_string_lossy().into_owned());
-    }
-    if try_get_version("claude").0.is_some() {
-        return resolve_executable_path("claude");
-    }
-    None
+    claude_cli::find().map(|(path, _)| path.to_string_lossy().into_owned())
 }
 
 fn find_codex_cli() -> Option<String> {
@@ -957,30 +964,30 @@ fn claude_launch_command(path: &str, settings_path: &Path) -> String {
 /// 检测 Claude Code CLI 是否已安装
 #[tauri::command]
 pub async fn check_claude_installed() -> Result<serde_json::Value, String> {
-    if let Some(path) = find_claude_cli() {
-        Ok(serde_json::json!({ "installed": true, "path": path }))
-    } else {
-        Ok(serde_json::json!({ "installed": false, "path": null }))
-    }
+    tokio::task::spawn_blocking(|| {
+        if let Some(path) = find_claude_cli() {
+            serde_json::json!({ "installed": true, "path": path })
+        } else {
+            serde_json::json!({ "installed": false, "path": null })
+        }
+    }).await.map_err(|e| format!("Claude Code 检测任务失败: {e}"))
 }
 
 /// 自动安装 Claude Code（官方 install.sh / install.ps1）
 #[tauri::command]
 pub async fn install_claude_cli() -> Result<String, String> {
-    if find_claude_cli().is_some() {
-        return Ok("Claude Code 已安装".to_string());
-    }
     tokio::task::spawn_blocking(|| {
-        run_curl_pipe_bash_install(CLAUDE_INSTALL_SCRIPT, "Claude Code")
+        if find_claude_cli().is_some() {
+            return Ok("Claude Code 已安装".to_string());
+        }
+        run_curl_pipe_bash_install(CLAUDE_INSTALL_SCRIPT, "Claude Code")?;
+        if find_claude_cli().is_none() {
+            return Err("安装后未找到有效的 Claude Code CLI。Claude 桌面版不能替代 CLI；请检查安装日志与网络后重试。".to_string());
+        }
+        Ok("Claude Code 安装完成".to_string())
     })
     .await
-    .map_err(|e| format!("安装任务失败: {e}"))??;
-    if find_claude_cli().is_none() {
-        return Err(
-            "安装脚本已执行，但仍未检测到 Claude Code，请重启应用或点击「重新检测」".to_string(),
-        );
-    }
-    Ok("Claude Code 安装完成".to_string())
+    .map_err(|e| format!("安装任务失败: {e}"))?
 }
 
 /// 一键配置并启动 Claude Code（写入 ~/.claude/settings.json + 打开终端）
@@ -1313,6 +1320,12 @@ fn extract_version(raw: &str) -> String {
 /// 尝试直接执行命令获取版本
 fn try_get_version(tool: &str) -> (Option<String>, Option<String>) {
     use std::process::Command;
+
+    if tool == "claude" {
+        return claude_cli::find()
+            .map(|(_, version)| (Some(version), None))
+            .unwrap_or_else(|| (None, Some("Claude Code CLI not installed".to_string())));
+    }
 
     #[cfg(target_os = "windows")]
     let output = {

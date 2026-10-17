@@ -117,6 +117,7 @@ describe("Claude Code setup", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "安装并启动" }));
     await screen.findByText(/尚未安装，未修改配置/);
+    expect(screen.getByRole("alert")).toHaveTextContent("Install failed");
     expect(
       vi
         .mocked(invoke)

@@ -80,6 +80,7 @@ export function ClaudeSetupPage({
 
   const [installStatus, setInstallStatus] = useState<InstallStatus>("checking");
   const [claudePath, setClaudePath] = useState<string | null>(null);
+  const [installError, setInstallError] = useState("");
   const [resolvedModel, setResolvedModel] = useState(
     MOHUAN_DEFAULT_CLAUDE_MODEL,
   );
@@ -89,6 +90,7 @@ export function ClaudeSetupPage({
       if (result.installed) {
         setInstallStatus("installed");
         setClaudePath(result.path);
+        setInstallError("");
       } else {
         setInstallStatus("not_installed");
         setClaudePath(null);
@@ -113,6 +115,7 @@ export function ClaudeSetupPage({
 
   const runInstall = useCallback(async () => {
     setInstallStatus("installing");
+    setInstallError("");
     try {
       const msg = await invoke<string>("install_claude_cli");
       toast.success(msg || "Claude Code 安装完成");
@@ -126,7 +129,9 @@ export function ClaudeSetupPage({
       return result.installed;
     } catch (err) {
       setInstallStatus("not_installed");
-      toast.error(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setInstallError(message);
+      toast.error(message);
       return false;
     }
   }, [applyInstallResult]);
@@ -291,6 +296,14 @@ export function ClaudeSetupPage({
               <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
               <span>未检测到 Claude Code CLI，可重试自动安装</span>
             </div>
+            {installError && (
+              <p
+                role="alert"
+                className="text-xs text-red-600 dark:text-red-400 whitespace-pre-wrap break-words max-h-40 overflow-y-auto"
+              >
+                {installError}
+              </p>
+            )}
             <div className="flex gap-2">
               <Button
                 size="sm"
