@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## ModelSwitch Tools 1.0.16 - 2026-10-20
+
+- Start Windows Claude Code in a clean PowerShell terminal and load gateway credentials into its process environment before startup.
+- Check CLI authentication before opening an interactive session; report an actionable error instead of continuing to official login.
+- Complete local onboarding when configuring gateway access, preserving existing settings and saved account credentials.
+- Add Windows integration coverage for credential inheritance, quoted paths and unauthenticated launch failures.
+
 ## ModelSwitch Tools 1.0.12 - 2026-10-17
 
 - Complete Claude Code one-click verification, optional installation, configuration and terminal launch.

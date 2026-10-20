@@ -84,6 +84,10 @@ jobs:
           pnpm exec vitest run tests/components/UpdateContext.test.tsx tests/utils/updater.test.ts tests/utils/desktopUpdatePolicy.test.ts tests/components/ClaudeSetupPage.test.tsx tests/utils/mohuanClaudeModel.test.ts
           node --test scripts/generate-updater-manifest.test.mjs
 
+      - name: Test Windows Claude gateway launcher
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib commands::claude_cli::launch_tests -- --nocapture
+
       - name: Prepare Tauri signing key
         shell: bash
         run: |
