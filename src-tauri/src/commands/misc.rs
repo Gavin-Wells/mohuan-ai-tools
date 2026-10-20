@@ -938,15 +938,20 @@ fn restore_claude_mohuan_env(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(target_os = "windows")]
+fn claude_windows_encoded_script(path: &str, settings_path: &Path) -> String {
+    use base64::Engine;
+    let script = claude_cli::windows_launch_script(path, settings_path);
+    let utf16: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    base64::engine::general_purpose::STANDARD.encode(utf16)
+}
+
 fn claude_launch_command(path: &str, settings_path: &Path) -> String {
     #[cfg(target_os = "windows")]
     {
-        let parent = Path::new(path).parent().unwrap_or_else(|| Path::new("."));
         format!(
-            "set \"PATH={};%PATH%\"\r\ncall \"{}\" --settings \"{}\"",
-            parent.to_string_lossy().replace('%', "%%"),
-            path.replace('%', "%%"),
-            settings_path.to_string_lossy().replace('%', "%%")
+            "powershell.exe -NoLogo -NoProfile -EncodedCommand {}",
+            claude_windows_encoded_script(path, settings_path)
         )
     }
     #[cfg(not(target_os = "windows"))]
@@ -970,7 +975,9 @@ pub async fn check_claude_installed() -> Result<serde_json::Value, String> {
         } else {
             serde_json::json!({ "installed": false, "path": null })
         }
-    }).await.map_err(|e| format!("Claude Code 检测任务失败: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Claude Code 检测任务失败: {e}"))
 }
 
 /// 自动安装 Claude Code（官方 install.sh / install.ps1）
@@ -1022,11 +1029,35 @@ pub async fn setup_and_launch_claude(
         env.insert(flag.into(), serde_json::json!("0"));
     }
     merge_claude_settings_env(&crate::config::get_claude_settings_path(), &config)?;
+    crate::claude_mcp::set_has_completed_onboarding().map_err(|e| e.to_string())?;
+    #[cfg(target_os = "windows")]
+    let encoded =
+        claude_windows_encoded_script(&claude_path, &crate::config::get_claude_settings_path());
+    #[cfg(not(target_os = "windows"))]
     let command = claude_launch_command(&claude_path, &crate::config::get_claude_settings_path());
 
-    tokio::task::spawn_blocking(move || launch_terminal_running(&command, "claude"))
-        .await
-        .map_err(|e| format!("启动终端任务失败: {e}"))??;
+    tokio::task::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            run_windows_start_command(
+                &[
+                    "powershell.exe",
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NoExit",
+                    "-EncodedCommand",
+                    &encoded,
+                ],
+                "Claude Code PowerShell",
+            )
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            launch_terminal_running(&command, "claude")
+        }
+    })
+    .await
+    .map_err(|e| format!("启动终端任务失败: {e}"))??;
 
     Ok("Claude Code 已配置并启动".to_string())
 }
@@ -2282,7 +2313,7 @@ fn escape_windows_batch_value(value: &str) -> String {
 fn run_windows_start_command(args: &[&str], terminal_name: &str) -> Result<(), String> {
     use std::process::Command;
 
-    let mut full_args = vec!["/C", "start"];
+    let mut full_args = vec!["/D", "/C", "start"];
     full_args.extend(args);
 
     let output = Command::new("cmd")
