@@ -1070,6 +1070,7 @@ pub fn run() {
             commands::install_claude_cli,
             commands::setup_and_launch_claude,
             commands::restore_claude_defaults,
+            commands::run_client_self_check,
             commands::open_terminal_with_command,
             commands::get_init_error,
             commands::get_migration_result,

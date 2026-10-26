@@ -13,6 +13,7 @@ import { MOHUAN_DEFAULT_CODEX_MODEL, MOHUAN_GATEWAY_V1 } from "@/config/mohuanGa
 import { resolveMohuanCodexModel } from "@/utils/mohuanCodexModel";
 import { buildMohuanCodexCatalog } from "@/utils/mohuanCodexCatalog";
 import { fetchModelsForConfig } from "@/lib/api/model-fetch";
+import { ClientSupport } from "@/components/mohuan/ClientSupport";
 
 const CODEX_FALLBACK_MODEL = MOHUAN_DEFAULT_CODEX_MODEL;
 
@@ -211,7 +212,7 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
   const codexReady = installStatus === "installed";
 
   return (
-    <div className="px-6 flex flex-col flex-1 min-h-0">
+    <div className="px-6 flex flex-col flex-1 min-h-0 overflow-y-auto">
       <div className="max-w-md mx-auto w-full flex flex-col justify-center flex-1 gap-4 py-4">
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold text-foreground">ChatGPT / Codex 快速配置</h1>
@@ -311,6 +312,7 @@ export function CodexSetupPage({ providers: _providers, onProvidersChanged: _onP
           </Button>
         </div>
 
+        <ClientSupport tool="codex" apiKey={apiKey} lastError={statusMsg} setupBusy={isLoading || installStatus === "installing"} />
         {billing && (
           <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
             <div className="flex items-center justify-between">

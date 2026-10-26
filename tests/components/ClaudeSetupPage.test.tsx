@@ -39,7 +39,7 @@ describe("Claude Code setup", () => {
       if (command === "fetch_models_for_config")
         return [{ id: "claude-opus-5-5" }] as never;
       if (command === "setup_and_launch_claude")
-        return "Claude Code 已配置并启动" as never;
+        return "配置已保存，已向终端发送启动请求" as never;
       if (command === "restore_claude_defaults") return true as never;
       throw new Error(`Unexpected command: ${command}`);
     });
@@ -123,5 +123,38 @@ describe("Claude Code setup", () => {
         .mocked(invoke)
         .mock.calls.some(([cmd]) => cmd === "setup_and_launch_claude"),
     ).toBe(false);
+  });
+
+  it("reports a terminal request, not a confirmed running CLI", async () => {
+    mockNative(true);
+    render(<ClaudeSetupPage providers={{}} onProvidersChanged={vi.fn()} />);
+    await screen.findByText(/Claude Code 已安装/);
+    fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), {
+      target: { value: "test-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "配置并启动" }));
+    await screen.findByText(/配置已保存，已向终端发送启动请求/);
+    expect(
+      screen.queryByText(/Claude Code 已配置并启动/),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows terminal launch errors and lets the user retry", async () => {
+    mockNative(true);
+    const implementation = vi.mocked(invoke).getMockImplementation()!;
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "setup_and_launch_claude")
+        throw new Error("终端启动请求超时");
+      return implementation(command, args);
+    });
+    render(<ClaudeSetupPage providers={{}} onProvidersChanged={vi.fn()} />);
+    await screen.findByText(/Claude Code 已安装/);
+    fireEvent.change(screen.getByPlaceholderText("粘贴你的 API Key"), {
+      target: { value: "test-key" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "配置并启动" }));
+    await screen.findByText(/配置失败: 终端启动请求超时/);
+    expect(screen.getByRole("button", { name: "配置并启动" })).toBeEnabled();
+    expect(localStorage.getItem("claude_api_key")).toBeNull();
   });
 });

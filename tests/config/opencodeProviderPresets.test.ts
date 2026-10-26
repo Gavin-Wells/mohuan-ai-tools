@@ -3,81 +3,40 @@ import {
   opencodeProviderPresets,
   opencodeNpmPackages,
   OPENCODE_PRESET_MODEL_VARIANTS,
+  getPresetModelDefaults,
 } from "@/config/opencodeProviderPresets";
+import {
+  MOHUAN_DEFAULT_CHAT_MODEL,
+  MOHUAN_DEFAULT_FLASH_MODEL,
+  MOHUAN_GATEWAY_V1,
+} from "@/config/mohuanGateway";
 
-describe("AWS Bedrock OpenCode Provider Presets", () => {
-  it("should include @ai-sdk/amazon-bedrock in npm packages", () => {
-    const bedrockPkg = opencodeNpmPackages.find(
-      (p) => p.value === "@ai-sdk/amazon-bedrock",
-    );
-    expect(bedrockPkg).toBeDefined();
-    expect(bedrockPkg!.label).toBe("Amazon Bedrock");
+describe("ModelSwitch OpenCode presets", () => {
+  it("offers only the configured OpenAI-compatible package", () => {
+    expect(opencodeNpmPackages).toEqual([
+      { value: "@ai-sdk/openai-compatible", label: "OpenAI Compatible" },
+    ]);
   });
-
-  it("should include Bedrock model variants", () => {
-    const variants = OPENCODE_PRESET_MODEL_VARIANTS["@ai-sdk/amazon-bedrock"];
-    expect(variants).toBeDefined();
-    expect(variants.length).toBeGreaterThan(0);
-
-    const opusModel = variants.find((v) =>
-      v.id.includes("anthropic.claude-opus-4-7"),
-    );
-    expect(opusModel).toBeDefined();
+  it("keeps the curated gateway and empty credential template", () => {
+    expect(opencodeProviderPresets).toHaveLength(1);
+    const preset = opencodeProviderPresets[0];
+    expect(preset.settingsConfig.npm).toBe("@ai-sdk/openai-compatible");
+    expect(preset.settingsConfig.options?.baseURL).toBe(MOHUAN_GATEWAY_V1);
+    expect(preset.settingsConfig.options?.apiKey).toBe("");
+    expect(preset.templateValues?.apiKey).toBeDefined();
   });
-
-  const bedrockPreset = opencodeProviderPresets.find(
-    (p) => p.name === "AWS Bedrock",
-  );
-
-  it("should include AWS Bedrock preset", () => {
-    expect(bedrockPreset).toBeDefined();
-  });
-
-  it("Bedrock preset should use @ai-sdk/amazon-bedrock npm package", () => {
-    expect(bedrockPreset!.settingsConfig.npm).toBe(
-      "@ai-sdk/amazon-bedrock",
-    );
-  });
-
-  it("Bedrock preset should have region in options", () => {
-    expect(bedrockPreset!.settingsConfig.options).toHaveProperty("region");
-  });
-
-  it("Bedrock preset should have cloud_provider category", () => {
-    expect(bedrockPreset!.category).toBe("cloud_provider");
-  });
-
-  it("Bedrock preset should have template values for AWS credentials", () => {
-    expect(bedrockPreset!.templateValues).toBeDefined();
-    expect(bedrockPreset!.templateValues!.region).toBeDefined();
-    expect(bedrockPreset!.templateValues!.region.editorValue).toBe(
-      "us-west-2",
-    );
-    expect(bedrockPreset!.templateValues!.accessKeyId).toBeDefined();
-    expect(bedrockPreset!.templateValues!.secretAccessKey).toBeDefined();
-  });
-
-  it("Bedrock preset should include Claude models", () => {
-    const models = bedrockPreset!.settingsConfig.models;
-    expect(models).toBeDefined();
-    const modelIds = Object.keys(models!);
+  it("uses the gateway's configured model variants without retired provider presets", () => {
+    const ids = [MOHUAN_DEFAULT_CHAT_MODEL, MOHUAN_DEFAULT_FLASH_MODEL];
+    const variants =
+      OPENCODE_PRESET_MODEL_VARIANTS["@ai-sdk/openai-compatible"];
+    expect(variants.map((model) => model.id)).toEqual(ids);
     expect(
-      modelIds.some((id) => id.includes("anthropic.claude")),
-    ).toBe(true);
-  });
-
-  it("Kimi For Coding preset should use Anthropic with the coding endpoint", () => {
-    const kimiForCodingPreset = opencodeProviderPresets.find(
-      (p) => p.name === "Kimi For Coding",
-    );
-
-    expect(kimiForCodingPreset).toBeDefined();
-    expect(kimiForCodingPreset!.settingsConfig.npm).toBe("@ai-sdk/anthropic");
-    expect(kimiForCodingPreset!.settingsConfig.options?.baseURL).toBe(
-      "https://api.kimi.com/coding/v1",
-    );
-    expect(kimiForCodingPreset!.templateValues?.baseURL.defaultValue).toBe(
-      "https://api.kimi.com/coding/v1",
-    );
+      Object.keys(opencodeProviderPresets[0].settingsConfig.models ?? {}),
+    ).toEqual(ids);
+    for (const id of ids)
+      expect(getPresetModelDefaults("@ai-sdk/openai-compatible", id)?.id).toBe(
+        id,
+      );
+    expect(getPresetModelDefaults("unknown", "missing")).toBeUndefined();
   });
 });

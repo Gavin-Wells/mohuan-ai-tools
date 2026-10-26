@@ -1,5 +1,4 @@
 import { useState, useCallback, useEffect } from "react";
-import { useTranslation } from "react-i18next";
 import { invoke } from "@tauri-apps/api/core";
 import {
   RefreshCw,
@@ -41,8 +40,6 @@ function loadSaved(): { token: string | null; user: MohuanUser | null } {
 }
 
 export function MohuanDashboard() {
-  const { t } = useTranslation();
-
   const [token, setToken] = useState<string | null>(
     () => loadSaved().token,
   );

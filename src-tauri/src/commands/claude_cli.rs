@@ -222,3 +222,100 @@ mod tests {
         assert!(start.elapsed() < Duration::from_secs(8));
     }
 }
+
+/// Windows bootstrap: credentials are read privately at runtime, never embedded
+/// in the command line or launcher. A clean PowerShell avoids profile aliases.
+pub(super) fn windows_launch_script(path: &str, settings_path: &Path) -> String {
+    let exe = path.replace('\'', "''");
+    let settings = settings_path.to_string_lossy().replace('\'', "''");
+    format!(
+        r#"$ErrorActionPreference = 'Stop'
+$exe = '{exe}'
+$settings = '{settings}'
+$config = Get-Content -LiteralPath $settings -Raw -Encoding UTF8 | ConvertFrom-Json
+if (-not $config.env.ANTHROPIC_AUTH_TOKEN -or -not $config.env.ANTHROPIC_BASE_URL) {{
+    throw 'Gateway credentials are missing. Configure Claude Code again in ModelSwitch Tools.'
+}}
+foreach ($name in @('CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST','CLAUDE_CODE_USE_GATEWAY','CLAUDE_CODE_OAUTH_TOKEN')) {{
+    [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+}}
+foreach ($property in $config.env.PSObject.Properties) {{
+    if ($property.Name -match '^(ANTHROPIC_|CLAUDE_CODE_USE_)') {{
+        [Environment]::SetEnvironmentVariable($property.Name, [string]$property.Value, 'Process')
+    }}
+}}
+$env:CLAUDE_CODE_ENTRYPOINT = 'cli'
+$env:PATH = (Split-Path -Parent $exe) + ';' + $env:PATH
+$statusText = & $exe --settings $settings auth status --json
+if ($LASTEXITCODE -ne 0) {{ throw 'Claude Code authentication check failed. Gateway settings were not recognized.' }}
+$status = ($statusText -join "`n") | ConvertFrom-Json
+if (-not $status.loggedIn) {{ throw 'Claude Code did not recognize the gateway credential. No official login was opened.' }}
+Write-Host 'ModelSwitch gateway configured. Starting Claude Code CLI...' -ForegroundColor Green
+& $exe --settings $settings
+exit $LASTEXITCODE
+"#
+    )
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+    #[test]
+    fn windows_bootstrap_reads_credentials_and_checks_auth_before_launch() {
+        let script = windows_launch_script(
+            r"C:\Users\O'Brien\.local\bin\claude.exe",
+            Path::new(r"C:\Users\O'Brien\.claude\settings.json"),
+        );
+        assert!(script.contains("O''Brien"));
+        assert!(script.contains("Get-Content -LiteralPath $settings"));
+        assert!(script.contains("SetEnvironmentVariable($property.Name"));
+        assert!(script.contains("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST"));
+        assert!(script.contains("CLAUDE_CODE_USE_GATEWAY"));
+        assert!(script.contains("auth status --json"));
+        assert!(
+            script.find("auth status --json").unwrap()
+                < script.rfind("& $exe --settings $settings").unwrap()
+        );
+        assert!(!script.contains("sk-"));
+        assert!(!script.contains("auth login"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_gateway_launch_uses_process_credentials_and_stops_without_auth() {
+        use base64::Engine;
+        for authenticated in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let home = dir.path().join("user's config");
+            std::fs::create_dir(&home).unwrap();
+            let exe = home.join("claude.cmd");
+            let settings = home.join("settings.json");
+            let marker = home.join("started.txt");
+            std::fs::write(&settings, r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"test-token","ANTHROPIC_BASE_URL":"https://api.modelswitch.org","ANTHROPIC_API_KEY":""}}"#).unwrap();
+            let stub = format!(
+                "@echo off\r\nif \"%~3\"==\"auth\" (\r\n echo {{\"loggedIn\":{authenticated}}}\r\n exit /b 0\r\n)\r\nif not \"%ANTHROPIC_AUTH_TOKEN%\"==\"test-token\" exit /b 15\r\nif not \"%ANTHROPIC_BASE_URL%\"==\"https://api.modelswitch.org\" exit /b 16\r\nif defined CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST exit /b 17\r\nif defined CLAUDE_CODE_USE_GATEWAY exit /b 18\r\necho started>\"%~dp0started.txt\"\r\nexit /b 0\r\n"
+            );
+            std::fs::write(&exe, stub).unwrap();
+            let script = windows_launch_script(&exe.to_string_lossy(), &settings);
+            let encoded = base64::engine::general_purpose::STANDARD.encode(
+                script
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes)
+                    .collect::<Vec<_>>(),
+            );
+            let output = Command::new("powershell.exe")
+                .args(["-NoProfile", "-EncodedCommand", &encoded])
+                .env("CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST", "1")
+                .env("CLAUDE_CODE_USE_GATEWAY", "1")
+                .output()
+                .unwrap();
+            assert_eq!(
+                output.status.success(),
+                authenticated,
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(marker.exists(), authenticated);
+        }
+    }
+}

@@ -81,8 +81,22 @@ jobs:
 
       - name: Test update flow
         run: |
-          pnpm exec vitest run tests/components/UpdateContext.test.tsx tests/utils/updater.test.ts tests/utils/desktopUpdatePolicy.test.ts tests/components/ClaudeSetupPage.test.tsx tests/utils/mohuanClaudeModel.test.ts
+          pnpm typecheck
+          pnpm exec vitest run tests/components/UpdateContext.test.tsx tests/utils/updater.test.ts tests/utils/desktopUpdatePolicy.test.ts tests/components/ClaudeSetupPage.test.tsx tests/utils/mohuanClaudeModel.test.ts tests/utils/clientDiagnostics.test.ts tests/components/ClientSupport.test.tsx tests/config/opencodeProviderPresets.test.ts
           node --test scripts/generate-updater-manifest.test.mjs
+
+      - name: Test read-only client diagnostics
+        run: cargo test --manifest-path tests/native-diagnostics/Cargo.toml --locked
+
+      - name: Test macOS Terminal launcher helpers
+        if: runner.os == 'macOS'
+        run: |
+          rustc --test src-tauri/src/commands/macos_terminal.rs -o "$RUNNER_TEMP/modelswitch-terminal-tests"
+          "$RUNNER_TEMP/modelswitch-terminal-tests"
+
+      - name: Test Windows Claude gateway launcher
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --lib claude_cli::launch_tests -- --nocapture
 
       - name: Prepare Tauri signing key
         shell: bash
@@ -411,6 +425,16 @@ jobs:
             ## ModelSwitch Tools ${{ github.ref_name }}
 
             Claude Code / Codex 一键配置与启动工具。
+
+            ### 本次更新
+
+            - Claude Code 和 Codex 配置页新增只读自检与脱敏反馈。
+            - 自检检查安装、配置、网关、Key 与模型列表；不执行付费推理，不把模型列表可读误报为生成可用。
+            - 配置操作等待时仍可自检；反馈需用户确认后才会打开本项目 GitHub 草稿，不会自动提交。
+            - Mac 默认终端启动增加超时与备用方式，准确显示“已发送启动请求”。
+            - 本次升级保留现有模型默认值与认证方式。
+
+            ### 保留功能
 
             - Claude Code 默认使用 `claude-opus-5-5`，仅保留 Opus 5.5 和 Sonnet 5.5。
             - Claude 后台任务使用 Sonnet 5.5，不再配置旧版 Claude 或 Haiku 模型。
