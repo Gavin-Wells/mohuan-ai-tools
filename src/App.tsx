@@ -792,32 +792,6 @@ function App() {
     await addProvider(duplicatedProvider);
   };
 
-  const handleOpenTerminal = async (provider: Provider) => {
-    try {
-      const selectedDir = await settingsApi.pickDirectory();
-      if (!selectedDir) {
-        return;
-      }
-
-      await providersApi.openTerminal(provider.id, activeApp, {
-        cwd: selectedDir,
-      });
-      toast.success(
-        t("provider.terminalOpened", {
-          defaultValue: "终端已打开",
-        }),
-      );
-    } catch (error) {
-      console.error("[App] Failed to open terminal", error);
-      const errorMessage = extractErrorMessage(error);
-      toast.error(
-        t("provider.terminalOpenFailed", {
-          defaultValue: "打开终端失败",
-        }) + (errorMessage ? `: ${errorMessage}` : ""),
-      );
-    }
-  };
-
   const handleImportSuccess = async () => {
     try {
       await queryClient.invalidateQueries({
@@ -1010,9 +984,6 @@ function App() {
                       onDuplicate={handleDuplicateProvider}
                       onConfigureUsage={setUsageProvider}
                       onOpenWebsite={handleOpenWebsite}
-                      onOpenTerminal={
-                        activeApp === "claude" ? handleOpenTerminal : undefined
-                      }
                       onCreate={() => setIsAddOpen(true)}
                       onSetAsDefault={
                         activeApp === "openclaw"
@@ -1206,10 +1177,7 @@ function App() {
                   size="icon"
                   onClick={() => setCurrentView("dashboard")}
                   title="控制台"
-                  className={cn(
-                    "hover:bg-black/5 dark:hover:bg-white/5",
-                    currentView === "dashboard" && "text-primary",
-                  )}
+                  className="hover:bg-black/5 dark:hover:bg-white/5"
                 >
                   <LayoutDashboard className="w-4 h-4" />
                 </Button>

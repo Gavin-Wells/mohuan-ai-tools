@@ -25,6 +25,7 @@ import {
 } from "@/config/mohuanGateway";
 import { fetchModelsForConfig } from "@/lib/api/model-fetch";
 import { selectMohuanClaudeModels } from "@/utils/mohuanClaudeModel";
+import { ClientSupport } from "@/components/mohuan/ClientSupport";
 
 type Status = "idle" | "checking" | "valid" | "invalid" | "writing" | "done";
 type InstallStatus = "checking" | "installed" | "not_installed" | "installing";
@@ -201,13 +202,14 @@ export function ClaudeSetupPage({
       return;
     }
     setStatus("writing");
-    setStatusMsg("正在配置并启动 Claude Code...");
+    setStatusMsg("正在验证 Key 与可用模型...");
     try {
       const models = await verifyAndResolve(k);
       if (installStatus !== "installed" && !(await runInstall())) {
         throw new Error("Claude Code 尚未安装，未修改配置");
       }
       const settingsConfig = buildMohuanClaudeSettings(k, models);
+      setStatusMsg("正在保存配置并打开终端...");
       const msg: string = await invoke("setup_and_launch_claude", {
         apiKey: k,
         settingsConfig,
@@ -215,12 +217,12 @@ export function ClaudeSetupPage({
       try {
         localStorage.setItem("claude_api_key", k);
       } catch {
-        /* Launch succeeded even if browser storage is disabled. */
+        /* The native launch request succeeded even if browser storage is disabled. */
       }
       fetchBilling(k);
       setStatus("done");
       setStatusMsg(`${msg} · ${models.model}`);
-      toast.success("Claude Code 已启动");
+      toast.success("配置已保存，已发送终端启动请求");
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       setStatus("invalid");
@@ -259,7 +261,7 @@ export function ClaudeSetupPage({
   const claudeReady = installStatus === "installed";
 
   return (
-    <div className="px-6 flex flex-col flex-1 min-h-0">
+    <div className="px-6 flex flex-col flex-1 min-h-0 overflow-y-auto">
       <div className="max-w-md mx-auto w-full flex flex-col justify-center flex-1 gap-4 py-4">
         <div className="text-center space-y-1">
           <h1 className="text-xl font-bold text-foreground">
@@ -418,6 +420,12 @@ export function ClaudeSetupPage({
           </Button>
         </div>
 
+        <ClientSupport
+          tool="claude"
+          apiKey={apiKey}
+          lastError={statusMsg || installError}
+          setupBusy={isLoading}
+        />
         {billing && (
           <div className="rounded-lg border border-border bg-card px-4 py-3 space-y-2">
             <div className="flex items-center justify-between">

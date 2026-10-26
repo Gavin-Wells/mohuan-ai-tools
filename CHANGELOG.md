@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## ModelSwitch Tools 1.0.17 - 2026-10-27
+
+- Add on-demand read-only diagnostics to the Claude Code and Codex setup pages, including installation, configuration, gateway authentication and model-list checks.
+- Keep diagnostics and feedback available while setup is waiting; distinguish successful configuration from unverified CLI startup and inference.
+- Add redacted feedback previews, clipboard reports and consent-based GitHub issue drafts; never automatically upload raw configurations, keys or chat history.
+- Bound default macOS Terminal automation requests and add a Launch Services fallback when automation fails.
+- Move Claude CLI discovery off the async setup worker and report launch-request status accurately.
+- Recheck official client configuration guidance before publishing; retain existing model defaults and authentication configuration.
+
 ## ModelSwitch Tools 1.0.16 - 2026-10-20
 
 - Start Windows Claude Code in a clean PowerShell terminal and load gateway credentials into its process environment before startup.
